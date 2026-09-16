@@ -54,7 +54,6 @@ export const Header = ({ onMenuToggle }) => {
     if (path.includes('/reports')) return 'Reports & Analytics';
     if (path.includes('/notifications')) return 'System Notifications';
     if (path.includes('/settings')) return 'System Settings';
-    if (path.includes('/ai/health-assistant')) return 'AI Health Assistant';
     if (path.includes('/ai/diet-planner')) return 'AI Diet Planner';
     if (path.includes('/ai/report-summarizer')) return 'AI Report Summarizer';
     return 'Hospital Management System';

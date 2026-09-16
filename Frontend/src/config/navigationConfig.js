@@ -92,12 +92,6 @@ export const navigationConfig = [
     section: 'AI HEALTHCARE',
     items: [
       {
-        label: 'AI Health Assistant',
-        path: '/ai/health-assistant',
-        icon: 'Bot',
-        permission: 'ai_health_assistant'
-      },
-      {
         label: 'AI Diet Planner',
         path: '/ai/diet-planner',
         icon: 'Salad',

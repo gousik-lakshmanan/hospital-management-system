@@ -23,7 +23,6 @@ export const ROLE_PERMISSIONS = {
     'reports',
     'notifications',
     'settings',
-    'ai_health_assistant',
     'ai_diet_planner',
     'ai_report_summarizer'
   ],
@@ -34,7 +33,6 @@ export const ROLE_PERMISSIONS = {
     'rooms_beds',
     'pharmacy',
     'blood_bank',
-    'ai_health_assistant',
     'ai_diet_planner',
     'ai_report_summarizer'
   ],
@@ -45,7 +43,6 @@ export const ROLE_PERMISSIONS = {
     'rooms_beds',
     'pharmacy',
     'blood_bank',
-    'ai_health_assistant',
     'ai_diet_planner',
     'ai_report_summarizer'
   ],
@@ -57,7 +54,6 @@ export const ROLE_PERMISSIONS = {
     'blood_bank',
     'visitors',
     'billing',
-    'ai_health_assistant',
     'ai_diet_planner',
     'ai_report_summarizer'
   ],
@@ -66,7 +62,6 @@ export const ROLE_PERMISSIONS = {
     'pharmacy',
     'patients',
     'rooms_beds',
-    'ai_health_assistant',
     'ai_diet_planner',
     'ai_report_summarizer'
   ],
@@ -75,7 +70,6 @@ export const ROLE_PERMISSIONS = {
     'rooms_beds',
     'pharmacy',
     'blood_bank',
-    'ai_health_assistant',
     'ai_diet_planner',
     'ai_report_summarizer'
   ]

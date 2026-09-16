@@ -403,12 +403,12 @@ export const PatientDashboard = () => {
               </button>
 
               <button
-                onClick={() => navigate('/ai/health-assistant')}
+                onClick={() => navigate('/ai/report-summarizer')}
                 className="p-4 border border-slate-200 rounded-xl bg-blue-50/20 hover:bg-blue-50/50 text-left transition-all cursor-pointer group border-blue-100"
               >
                 <Sparkles className="w-6 h-6 text-blue-700 mb-2 group-hover:scale-105 transition-transform animate-pulse" />
-                <span className="font-semibold text-xs text-slate-800 block">Consult AI</span>
-                <span className="text-[10px] text-slate-400 mt-0.5 block">Chat with health AI</span>
+                <span className="font-semibold text-xs text-slate-800 block">AI Summarizer</span>
+                <span className="text-[10px] text-slate-400 mt-0.5 block">Summarize lab reports</span>
               </button>
 
               <button

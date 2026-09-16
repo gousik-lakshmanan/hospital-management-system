@@ -38,7 +38,6 @@ import NotificationsPage from '../components/notifications/NotificationsPage';
 import SettingsPage from '../components/settings/SettingsPage';
 
 // Shared AI components
-import AIHealthAssistant from '../components/ai/AIHealthAssistant';
 import AIDietPlanner from '../components/ai/AIDietPlanner';
 import AIReportSummarizer from '../components/ai/AIReportSummarizer';
 
@@ -126,7 +125,6 @@ export const AppRoutes = () => {
                 <Route path="/patient/blood-bank" element={<RoleRoute module="blood-bank"><BloodBankPage /></RoleRoute>} />
 
                 {/* 8. Common Shared AI Assistance Paths */}
-                <Route path="/ai/health-assistant" element={<RoleRoute module="health-assistant"><AIHealthAssistant /></RoleRoute>} />
                 <Route path="/ai/diet-planner" element={<RoleRoute module="diet-planner"><AIDietPlanner /></RoleRoute>} />
                 <Route path="/ai/report-summarizer" element={<RoleRoute module="report-summarizer"><AIReportSummarizer /></RoleRoute>} />
 

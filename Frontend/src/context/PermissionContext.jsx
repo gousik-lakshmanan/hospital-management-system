@@ -30,7 +30,6 @@ export const PermissionProvider = ({ children }) => {
       'reports': 'reports',
       'notifications': 'notifications',
       'settings': 'settings',
-      'health-assistant': 'ai_health_assistant',
       'diet-planner': 'ai_diet_planner',
       'report-summarizer': 'ai_report_summarizer'
     };
