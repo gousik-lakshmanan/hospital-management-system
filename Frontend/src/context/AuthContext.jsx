@@ -6,8 +6,14 @@ export const AuthContext = createContext();
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(() => {
     try {
+      const token = localStorage.getItem('medisync_token');
       const saved = localStorage.getItem('medisync_user');
-      return saved ? JSON.parse(saved) : null;
+      if (!token || !saved) return null;
+      const parsed = JSON.parse(saved);
+      if (parsed && typeof parsed === 'object' && parsed.role) {
+        return parsed;
+      }
+      return null;
     } catch {
       return null;
     }
@@ -21,9 +27,13 @@ export const AuthProvider = ({ children }) => {
       if (token) {
         try {
           const data = await authService.getMe();
-          if (data.success && data.user) {
+          if (data && data.success && data.user && data.user.role) {
             setUser(data.user);
             localStorage.setItem('medisync_user', JSON.stringify(data.user));
+          } else {
+            setUser(null);
+            localStorage.removeItem('medisync_token');
+            localStorage.removeItem('medisync_user');
           }
         } catch {
           // Token invalid or expired
@@ -31,6 +41,9 @@ export const AuthProvider = ({ children }) => {
           localStorage.removeItem('medisync_token');
           localStorage.removeItem('medisync_user');
         }
+      } else {
+        setUser(null);
+        localStorage.removeItem('medisync_user');
       }
       setLoading(false);
     };
@@ -92,6 +105,19 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
+  const updateUser = useCallback((updatedUserData) => {
+    if (!updatedUserData) return;
+    setUser((prev) => {
+      const merged = { ...prev, ...updatedUserData };
+      try {
+        localStorage.setItem('medisync_user', JSON.stringify(merged));
+      } catch (err) {
+        console.warn('Could not save updated user to localStorage', err.message);
+      }
+      return merged;
+    });
+  }, []);
+
   return (
     <AuthContext.Provider
       value={{
@@ -100,6 +126,7 @@ export const AuthProvider = ({ children }) => {
         login,
         register,
         logout,
+        updateUser,
         isAuthenticated: !!user,
         currentRole: user?.role,
       }}

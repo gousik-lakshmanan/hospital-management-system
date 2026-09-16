@@ -39,25 +39,8 @@ export const AppointmentsPage = () => {
 
   const todayStr = new Date().toISOString().split('T')[0];
 
-  // Scoped Appointments based on authenticated persona
-  const getRoleScopedAppointments = () => {
-    if (currentRole === 'doctor') {
-      return appointments.filter(
-        (a) => a.type === 'doctor' && (a.providerId === user?.id || (user?.email && a.providerName.toLowerCase().includes(user?.name?.toLowerCase() || '')))
-      );
-    }
-    if (currentRole === 'nurse') {
-      return appointments.filter(
-        (a) => a.type === 'nurse' && (a.providerId === user?.id || (user?.email && a.providerName.toLowerCase().includes(user?.name?.toLowerCase() || '')))
-      );
-    }
-    if (currentRole === 'patient') {
-      return appointments.filter((a) => a.patientId === (user?.id || 'P-105'));
-    }
-    return appointments;
-  };
-
-  const scopedAppointments = getRoleScopedAppointments();
+  // Scoped Appointments from backend
+  const scopedAppointments = appointments;
 
   // Filter by active tab
   const getFilteredData = () => {

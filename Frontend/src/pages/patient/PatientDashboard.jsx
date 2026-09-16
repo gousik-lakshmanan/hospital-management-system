@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   HeartPulse,
@@ -23,27 +23,35 @@ import { mockPatients, mockDietPlans, mockBills, billingService } from '../../da
 import { useAuth } from '../../hooks/useAuth';
 import { useAppointments } from '../../context/AppointmentContext';
 import BookAppointmentModal from '../../components/appointments/BookAppointmentModal';
+import { patientService } from '../../services/api';
 
 export const PatientDashboard = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { appointments, cancelAppointment } = useAppointments();
+  const { appointments, cancelAppointment, refreshAppointments } = useAppointments();
 
-  const [patient] = useState(
-    mockPatients.find((p) => p.id === 'P-105') || {
-      id: 'P-105',
-      name: 'Gousik Lakshmanan',
-      vitals: { temp: '98.6 °F', bp: '120/80 mmHg', heartRate: '72 bpm', spo2: '99%' },
-      bloodGroup: 'O-',
-      status: 'Outpatient',
-      room: 'Outpatient',
-      medicalHistory: ['Allergic Rhinitis'],
-      prescriptions: [
-        { medicine: 'Cetirizine 10mg', dosage: '0-0-1', duration: '10 days', pharmacistGiven: true },
-        { medicine: 'Montelukast 10mg', dosage: '0-0-1', duration: '10 days', pharmacistGiven: true }
-      ]
-    }
-  );
+  const [patientData, setPatientData] = useState(null);
+  const [loadingProfile, setLoadingProfile] = useState(true);
+
+  const fallbackPatient = mockPatients.find((p) => p.id === 'P-105') || mockPatients[0];
+  const activePatient = patientData || fallbackPatient;
+
+  useEffect(() => {
+    const loadProfile = async () => {
+      try {
+        const res = await patientService.getMyProfile();
+        if (res?.success && res.patient) {
+          setPatientData(res.patient);
+        }
+      } catch (err) {
+        console.warn('Could not load patient profile from backend:', err.message);
+      } finally {
+        setLoadingProfile(false);
+      }
+    };
+    loadProfile();
+    refreshAppointments?.();
+  }, [refreshAppointments]);
 
   const [dietPlan] = useState(mockDietPlans.find((d) => d.id === 'P-105') || mockDietPlans[0]);
   const [bills, setBills] = useState(mockBills.filter((b) => b.patientId === 'P-105') || [mockBills[1]]);
@@ -71,17 +79,15 @@ export const PatientDashboard = () => {
     setBills([...mockBills.filter((b) => b.patientId === 'P-105')]);
   };
 
-  const handleConfirmCancel = () => {
+  const handleConfirmCancel = async () => {
     if (cancelModalAppt) {
-      cancelAppointment(cancelModalAppt.id, 'Cancelled by patient');
+      await cancelAppointment(cancelModalAppt._id || cancelModalAppt.id, 'Cancelled by patient');
       setCancelModalAppt(null);
     }
   };
 
-  // Filter appointments for this logged-in patient
-  const patientAppointments = appointments.filter(
-    (a) => a.patientId === (user?.id || 'P-105')
-  );
+  // Filter appointments for this logged-in patient (backend already scopes to authenticated patient)
+  const patientAppointments = appointments;
 
   const filteredAppointments = patientAppointments.filter((a) => {
     if (activeApptTab === 'DOCTOR') return a.type === 'doctor';
@@ -97,7 +103,9 @@ export const PatientDashboard = () => {
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white uppercase tracking-wider">
             Patient Portal Desk
           </span>
-          <h2 className="text-xl font-bold text-white">Hello, {patient.name}</h2>
+          <h2 className="text-xl font-bold text-white">
+            Hello, {patientData?.name || user?.name || 'Patient'}
+          </h2>
           <p className="text-xs text-blue-100">
             Intelligent Connected Hospital Portal • Book Doctor & Nurse Services Seamlessly
           </p>
@@ -434,23 +442,29 @@ export const PatientDashboard = () => {
           {/* Current medications */}
           <Card title="Daily Medication Prescriptions" subtitle="Your current active doctor prescription round">
             <div className="divide-y divide-slate-100">
-              {patient.prescriptions.map((pr, idx) => (
-                <div key={idx} className="py-3 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                      <Pill className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-xs text-slate-800">{pr.medicine}</h4>
-                      <span className="text-[10px] text-slate-400 mt-0.5 block">Dosage: {pr.dosage}</span>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-[10px] font-semibold text-slate-500 block">Duration: {pr.duration}</span>
-                    <Badge className="mt-1">{pr.pharmacistGiven ? 'Dispensed' : 'Pending Counter'}</Badge>
-                  </div>
+              {(patientData?.prescriptions || []).length === 0 ? (
+                <div className="py-6 text-center text-xs text-slate-400">
+                  No active prescriptions assigned
                 </div>
-              ))}
+              ) : (
+                (patientData?.prescriptions || []).map((pr, idx) => (
+                  <div key={idx} className="py-3 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                        <Pill className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-xs text-slate-800">{pr.medicine}</h4>
+                        <span className="text-[10px] text-slate-400 mt-0.5 block">Dosage: {pr.dosage}</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] font-semibold text-slate-500 block">Duration: {pr.duration}</span>
+                      <Badge className="mt-1">{pr.pharmacistGiven ? 'Dispensed' : 'Pending Counter'}</Badge>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </Card>
         </div>
@@ -461,19 +475,27 @@ export const PatientDashboard = () => {
             <div className="grid grid-cols-2 gap-2 text-center">
               <div className="border border-slate-200 p-2.5 rounded-xl bg-slate-50/50">
                 <span className="text-[9px] text-slate-400 font-bold block uppercase">Body Temp</span>
-                <span className="text-xs font-bold text-slate-700 block mt-0.5">{patient.vitals.temp}</span>
+                <span className="text-xs font-bold text-slate-700 block mt-0.5">
+                  {patientData?.vitals?.temp || 'Not Recorded'}
+                </span>
               </div>
               <div className="border border-slate-200 p-2.5 rounded-xl bg-slate-50/50">
                 <span className="text-[9px] text-slate-400 font-bold block uppercase">BP Target</span>
-                <span className="text-xs font-bold text-slate-700 block mt-0.5">{patient.vitals.bp}</span>
+                <span className="text-xs font-bold text-slate-700 block mt-0.5">
+                  {patientData?.vitals?.bp || 'Not Recorded'}
+                </span>
               </div>
               <div className="border border-slate-200 p-2.5 rounded-xl bg-slate-50/50">
                 <span className="text-[9px] text-slate-400 font-bold block uppercase">Heart Rate</span>
-                <span className="text-xs font-bold text-slate-700 block mt-0.5">{patient.vitals.heartRate}</span>
+                <span className="text-xs font-bold text-slate-700 block mt-0.5">
+                  {patientData?.vitals?.heartRate || 'Not Recorded'}
+                </span>
               </div>
               <div className="border border-slate-200 p-2.5 rounded-xl bg-slate-50/50">
                 <span className="text-[9px] text-slate-400 font-bold block uppercase">Blood Group</span>
-                <span className="text-xs font-bold text-slate-700 block mt-0.5">{patient.bloodGroup}</span>
+                <span className="text-xs font-bold text-slate-700 block mt-0.5">
+                  {patientData?.bloodGroup && patientData.bloodGroup !== 'Not Recorded' ? patientData.bloodGroup : 'Not Recorded'}
+                </span>
               </div>
             </div>
           </Card>
@@ -559,19 +581,21 @@ export const PatientDashboard = () => {
           <div className="grid grid-cols-4 gap-2 text-center">
             <div className="border border-slate-200 p-2 rounded-lg bg-slate-50/50">
               <span className="text-[9px] text-slate-400 font-bold block uppercase">Body Temp</span>
-              <span className="text-xs font-bold text-slate-700 block mt-0.5">{patient.vitals.temp}</span>
+              <span className="text-xs font-bold text-slate-700 block mt-0.5">{activePatient?.vitals?.temp || 'Not Recorded'}</span>
             </div>
             <div className="border border-slate-200 p-2 rounded-lg bg-slate-50/50">
               <span className="text-[9px] text-slate-400 font-bold block uppercase">BP Target</span>
-              <span className="text-xs font-bold text-slate-700 block mt-0.5">{patient.vitals.bp}</span>
+              <span className="text-xs font-bold text-slate-700 block mt-0.5">{activePatient?.vitals?.bp || 'Not Recorded'}</span>
             </div>
             <div className="border border-slate-200 p-2 rounded-lg bg-slate-50/50">
               <span className="text-[9px] text-slate-400 font-bold block uppercase">Heart Rate</span>
-              <span className="text-xs font-bold text-slate-700 block mt-0.5">{patient.vitals.heartRate}</span>
+              <span className="text-xs font-bold text-slate-700 block mt-0.5">{activePatient?.vitals?.heartRate || 'Not Recorded'}</span>
             </div>
             <div className="border border-slate-200 p-2 rounded-lg bg-slate-50/50">
               <span className="text-[9px] text-slate-400 font-bold block uppercase">Blood Group</span>
-              <span className="text-xs font-bold text-slate-700 block mt-0.5">{patient.bloodGroup}</span>
+              <span className="text-xs font-bold text-slate-700 block mt-0.5">
+                {activePatient?.bloodGroup && activePatient.bloodGroup !== 'Not Recorded' ? activePatient.bloodGroup : 'Not Recorded'}
+              </span>
             </div>
           </div>
 
@@ -584,11 +608,11 @@ export const PatientDashboard = () => {
               </div>
               <div className="flex justify-between text-xs">
                 <span className="text-slate-400">Admissions Status</span>
-                <span className="font-semibold text-slate-600">{patient.status}</span>
+                <span className="font-semibold text-slate-600">{activePatient?.status || 'Outpatient'}</span>
               </div>
               <div className="flex justify-between text-xs">
                 <span className="text-slate-400">Department Room</span>
-                <span className="font-semibold text-slate-600">{patient.room}</span>
+                <span className="font-semibold text-slate-600">{activePatient?.room || 'Outpatient'}</span>
               </div>
             </div>
           </div>
@@ -596,7 +620,7 @@ export const PatientDashboard = () => {
           <div>
             <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">Diagnostic Timeline</h4>
             <div className="space-y-2 text-xs text-slate-600 pl-4 border-l border-blue-200 ml-1">
-              {patient.medicalHistory.map((h, idx) => (
+              {(activePatient?.medicalHistory || ['Initial registration consultation completed']).map((h, idx) => (
                 <div key={idx} className="relative py-1">
                   <span className="absolute -left-[20px] top-2.5 w-2 h-2 rounded-full bg-blue-500" />
                   <p>{h}</p>
@@ -625,13 +649,19 @@ export const PatientDashboard = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-600">
-                {patient.prescriptions.map((pr, idx) => (
-                  <tr key={idx}>
-                    <td className="p-3 font-semibold text-slate-800">{pr.medicine}</td>
-                    <td className="p-3">{pr.dosage}</td>
-                    <td className="p-3">{pr.duration}</td>
+                {(activePatient?.prescriptions || []).length === 0 ? (
+                  <tr>
+                    <td colSpan={3} className="p-4 text-center text-slate-400">No active prescriptions</td>
                   </tr>
-                ))}
+                ) : (
+                  (activePatient?.prescriptions || []).map((pr, idx) => (
+                    <tr key={idx}>
+                      <td className="p-3 font-semibold text-slate-800">{pr.medicine}</td>
+                      <td className="p-3">{pr.dosage}</td>
+                      <td className="p-3">{pr.duration}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

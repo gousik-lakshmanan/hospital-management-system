@@ -1,4 +1,5 @@
 import React, { useState, useContext } from 'react';
+import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import { NotificationContext } from '../../context/NotificationContext';
@@ -32,7 +33,7 @@ export const AppLayout = ({ children }) => {
 
         {/* Content Body */}
         <main className="flex-1 p-6 overflow-y-auto max-w-[1920px] mx-auto w-full">
-          {children}
+          {children || <Outlet />}
         </main>
       </div>
 

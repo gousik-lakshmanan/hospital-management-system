@@ -1,6 +1,6 @@
 import React, { useState, useContext, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Menu, Bell, Search, LogOut, User, Settings, ShieldAlert } from 'lucide-react';
+import { Menu, Bell, LogOut, User, Settings, ShieldAlert } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { NotificationContext } from '../../context/NotificationContext';
 import { ROLE_LABELS } from '../../config/constants';
@@ -41,6 +41,7 @@ export const Header = ({ onMenuToggle }) => {
   const getPageTitle = () => {
     const path = location.pathname;
     if (path.includes('/dashboard')) return 'Dashboard Overview';
+    if (path.includes('/profile')) return 'My User Profile';
     if (path.includes('/patients')) return 'Patient Directory';
     if (path.includes('/appointments')) return 'Appointment Scheduling';
     if (path.includes('/doctors')) return 'Medical Practitioners';
@@ -75,16 +76,6 @@ export const Header = ({ onMenuToggle }) => {
             <Breadcrumb />
           </div>
         </div>
-      </div>
-
-      {/* Center section: Search (Desktop only) */}
-      <div className="hidden md:flex items-center max-w-xs flex-1 relative mx-6">
-        <Search className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
-        <input
-          type="text"
-          placeholder="Search patient, records, invoices..."
-          className="w-full pl-9 pr-4 py-1.5 border border-slate-200 rounded-lg text-xs bg-slate-50 hover:bg-slate-100/50 focus:bg-white focus:outline-none focus:border-blue-500 transition-colors"
-        />
       </div>
 
       {/* Right section: Notifications & Profile */}
@@ -171,8 +162,16 @@ export const Header = ({ onMenuToggle }) => {
             onClick={() => setShowProfileDropdown(!showProfileDropdown)}
             className="flex items-center gap-2 cursor-pointer focus:outline-none"
           >
-            <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs uppercase shadow-xs">
-              {user?.name ? user.name.split(' ').map(n => n[0]).join('') : 'U'}
+            <div className="w-8 h-8 rounded-full overflow-hidden bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs uppercase shadow-xs">
+              {user?.profilePicture ? (
+                <img
+                  src={user.profilePicture}
+                  alt={user?.name || 'User'}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <span>{user?.name ? user.name.split(' ').map(n => n[0]).join('') : 'U'}</span>
+              )}
             </div>
             <div className="hidden lg:block text-left">
               <span className="text-xs font-semibold text-slate-700 block max-w-[120px] truncate">
@@ -194,9 +193,9 @@ export const Header = ({ onMenuToggle }) => {
               <button
                 onClick={() => {
                   setShowProfileDropdown(false);
-                  navigate(`/${currentRole}/dashboard`);
+                  navigate('/profile');
                 }}
-                className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
               >
                 <User className="w-4 h-4 text-slate-400" />
                 My Profile

@@ -63,8 +63,16 @@ export const Sidebar = ({ isOpen, onClose }) => {
         {/* User Card */}
         <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-semibold text-sm">
-              {user?.name ? user.name.split(' ').map(n => n[0]).join('') : 'U'}
+            <div className="w-10 h-10 rounded-full overflow-hidden bg-blue-100 text-blue-700 flex items-center justify-center font-semibold text-sm shadow-xs shrink-0">
+              {user?.profilePicture ? (
+                <img
+                  src={user.profilePicture}
+                  alt={user?.name || 'User'}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <span>{user?.name ? user.name.split(' ').map(n => n[0]).join('') : 'U'}</span>
+              )}
             </div>
             <div className="overflow-hidden">
               <h4 className="font-semibold text-sm text-slate-800 truncate">{user?.name}</h4>
@@ -133,7 +141,7 @@ export const Sidebar = ({ isOpen, onClose }) => {
         </nav>
 
         {/* Global Sign Out Button & Footer */}
-        <div className="p-3 border-t border-slate-100 bg-slate-50/50 space-y-2">
+        <div className="p-3 border-t border-slate-100 bg-slate-50/50">
           <button
             type="button"
             onClick={handleSignOutClick}
@@ -142,10 +150,6 @@ export const Sidebar = ({ isOpen, onClose }) => {
             <Icons.LogOut className="w-5 h-5 text-red-500" />
             <span>Sign Out</span>
           </button>
-
-          <div className="text-center pt-1">
-            <p className="text-[10px] text-slate-400">SIH 2026 Presentation Ready</p>
-          </div>
         </div>
       </aside>
 

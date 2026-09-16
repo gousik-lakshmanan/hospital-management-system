@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, Stethoscope, HeartHandshake, CheckCircle2, User, FileText, AlertCircle, Sparkles, Building2, Activity } from 'lucide-react';
 import Modal from '../common/Modal';
 import Button from '../common/Button';
@@ -147,24 +147,25 @@ export const BookAppointmentModal = ({ isOpen, onClose, initialType = 'doctor' }
       return;
     }
 
-    try {
-      const newAppt = bookAppointment({
-        type: bookingType,
-        patientId,
-        patientName,
-        department,
-        service: bookingType === 'doctor' ? 'Consultation' : service,
-        reason: reason.trim(),
-        date: preferredDate,
-        time: preferredTime,
-        notes: additionalNotes.trim()
-      });
+    (async () => {
+      try {
+        const newAppt = await bookAppointment({
+          type: bookingType,
+          providerId: assignedProvider?.id || assignedProvider?._id,
+          department,
+          service: bookingType === 'doctor' ? 'Consultation' : service,
+          reason: reason.trim(),
+          date: preferredDate,
+          time: preferredTime,
+          notes: additionalNotes.trim(),
+        });
 
-      setConfirmedAppointment(newAppt);
-      setStep(3);
-    } catch (err) {
-      setErrorMessage(err.message || 'Failed to complete appointment booking. Please try another slot.');
-    }
+        setConfirmedAppointment(newAppt);
+        setStep(3);
+      } catch (err) {
+        setErrorMessage(err.message || 'Failed to complete appointment booking. Please try another slot.');
+      }
+    })();
   };
 
   return (

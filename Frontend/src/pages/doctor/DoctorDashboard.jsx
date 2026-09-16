@@ -10,12 +10,10 @@ import { useAppointments } from '../../context/AppointmentContext';
 
 export const DoctorDashboard = () => {
   const { user } = useAuth();
-  const { appointments, updateAppointmentStatus } = useAppointments();
+  const { appointments, updateAppointmentStatus, refreshAppointments } = useAppointments();
   
-  // Scoped appointments for logged-in doctor
-  const doctorAppointments = appointments.filter(
-    (a) => a.type === 'doctor' && (a.providerId === user?.id || (user?.email && a.providerName.toLowerCase().includes(user?.name?.toLowerCase() || '')))
-  );
+  // Scoped appointments from backend for logged-in doctor
+  const doctorAppointments = appointments.filter((a) => a.type === 'doctor');
 
   const [patients, setPatients] = useState(mockPatients);
   

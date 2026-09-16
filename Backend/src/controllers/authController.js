@@ -1,14 +1,13 @@
 import User from '../models/User.js';
+import Patient from '../models/Patient.js';
 import { generateToken } from '../utils/generateToken.js';
 
-const ALLOWED_ROLES = ['admin', 'doctor', 'nurse', 'receptionist', 'pharmacist', 'patient'];
-
-// @desc    Register a new user account (6 personas supported)
+// @desc    Register a new patient account (Public registration strictly creates patients only)
 // @route   POST /api/auth/register
 // @access  Public
 export const register = async (req, res, next) => {
   try {
-    const { firstName, lastName, email, phone, password, role } = req.body;
+    const { firstName, lastName, email, phone, password } = req.body;
 
     if (!firstName || !lastName || !email || !password) {
       return res.status(400).json({
@@ -24,14 +23,8 @@ export const register = async (req, res, next) => {
       });
     }
 
-    const assignedRole = role ? role.toLowerCase().trim() : 'patient';
-    if (!ALLOWED_ROLES.includes(assignedRole)) {
-      return res.status(400).json({
-        success: false,
-        message: `Invalid role selected. Allowed roles are: ${ALLOWED_ROLES.join(', ')}`,
-      });
-    }
-
+    // STRICT SECURITY RULE: Public registration ONLY creates patient accounts
+    const assignedRole = 'patient';
     const normalizedEmail = email.toLowerCase().trim();
 
     // Check if user already exists
@@ -55,9 +48,40 @@ export const register = async (req, res, next) => {
 
     await newUser.save();
 
+    // Create or link corresponding Patient profile with empty/zero vitals
+    let patientProfile = await Patient.findOne({ userId: newUser._id });
+    if (!patientProfile) {
+      patientProfile = new Patient({
+        userId: newUser._id,
+        name: `${newUser.firstName} ${newUser.lastName}`.trim(),
+        email: newUser.email,
+        phone: newUser.phone,
+        status: 'Outpatient',
+        room: 'Outpatient',
+        vitals: {
+          temp: '',
+          bp: '',
+          heartRate: '',
+          spo2: '',
+          weight: '',
+          height: '',
+          bmi: '',
+          bloodSugar: '',
+          recordedBy: null,
+          recordedByName: '',
+          recordedByRole: '',
+          recordedAt: null,
+        },
+      });
+      await patientProfile.save();
+    }
+
+    newUser.profileId = patientProfile._id.toString();
+    await newUser.save();
+
     return res.status(201).json({
       success: true,
-      message: 'Registration successful',
+      message: 'Patient registration successful',
       user: {
         id: newUser._id.toString(),
         firstName: newUser.firstName,
@@ -67,6 +91,7 @@ export const register = async (req, res, next) => {
         phone: newUser.phone,
         role: newUser.role,
         isActive: newUser.isActive,
+        profileId: newUser.profileId,
       },
     });
   } catch (error) {

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Eye, Activity, PenTool, UserPlus, Filter } from 'lucide-react';
-import { mockPatients, patientService } from '../../data/mockData';
+import { patientService } from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermissions } from '../../hooks/usePermissions';
 import Card from '../common/Card';
@@ -12,7 +12,8 @@ import Modal from '../common/Modal';
 export const PatientsPage = () => {
   const { currentRole } = useAuth();
   const { hasPermission } = usePermissions();
-  const [patients, setPatients] = useState(mockPatients);
+  const [patients, setPatients] = useState([]);
+  const [loading, setLoading] = useState(false);
   
   // Registration Form Modal
   const [isRegModalOpen, setIsRegModalOpen] = useState(false);
@@ -35,63 +36,91 @@ export const PatientsPage = () => {
   const [bp, setBp] = useState('');
   const [hr, setHr] = useState('');
   const [spo2, setSpo2] = useState('');
+  const [vitalsError, setVitalsError] = useState('');
+
+  const fetchPatients = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await patientService.getPatients();
+      if (res?.success && Array.isArray(res.patients)) {
+        setPatients(res.patients);
+      }
+    } catch (err) {
+      console.warn('Could not fetch patients from backend:', err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPatients();
+  }, [fetchPatients]);
 
   // Handle register submission
-  const handleRegister = (e) => {
+  const handleRegister = async (e) => {
     e.preventDefault();
-    if (!name || !age || !phone) return;
+    if (!name || !phone) return;
 
-    patientService.create({
-      name,
-      age: parseInt(age),
-      gender,
-      bloodGroup,
-      phone,
-      email,
-      medicalHistory: historyText ? [historyText] : [],
-      room: 'Outpatient',
-      prescriptions: []
-    });
+    try {
+      await patientService.createPatient({
+        name,
+        age: parseInt(age) || 0,
+        gender,
+        bloodGroup,
+        phone,
+        email,
+        medicalHistory: historyText ? [historyText] : [],
+        room: 'Outpatient',
+      });
+      await fetchPatients();
+      setIsRegModalOpen(false);
 
-    setPatients([...mockPatients]);
-    setIsRegModalOpen(false);
-
-    // Reset fields
-    setName('');
-    setAge('');
-    setPhone('');
-    setEmail('');
-    setHistoryText('');
+      // Reset fields
+      setName('');
+      setAge('');
+      setPhone('');
+      setEmail('');
+      setHistoryText('');
+    } catch (err) {
+      console.error('Failed to create patient:', err.message);
+    }
   };
 
   const handleOpenVitals = (p) => {
-    setVitalsPatientId(p.id);
-    setTemp(p.vitals.temp.replace(' °F', ''));
-    setBp(p.vitals.bp.replace(' mmHg', ''));
-    setHr(p.vitals.heartRate.replace(' bpm', ''));
-    setSpo2(p.vitals.spo2.replace('%', ''));
+    setVitalsPatientId(p._id || p.id);
+    setTemp((p.vitals?.temp || '').replace(' °F', ''));
+    setBp((p.vitals?.bp || '').replace(' mmHg', ''));
+    setHr((p.vitals?.heartRate || '').replace(' bpm', ''));
+    setSpo2((p.vitals?.spo2 || '').replace('%', ''));
+    setVitalsError('');
     setIsVitalsOpen(true);
   };
 
-  const handleSaveVitals = (e) => {
+  const handleSaveVitals = async (e) => {
     e.preventDefault();
-    patientService.updateVitals(vitalsPatientId, {
-      temp: `${temp} °F`,
-      bp: `${bp} mmHg`,
-      heartRate: `${hr} bpm`,
-      spo2: `${spo2}%`
-    });
-    setPatients([...mockPatients]);
-    setIsVitalsOpen(false);
+    setVitalsError('');
+    try {
+      const payload = {
+        temp: temp.trim() ? `${temp.trim()} °F` : '',
+        bp: bp.trim() ? `${bp.trim()} mmHg` : '',
+        heartRate: hr.trim() ? `${hr.trim()} bpm` : '',
+        spo2: spo2.trim() ? `${spo2.trim()}%` : '',
+      };
+      await patientService.updateVitals(vitalsPatientId, payload);
+      await fetchPatients();
+      setIsVitalsOpen(false);
+    } catch (err) {
+      setVitalsError(err.response?.data?.message || 'Failed to update vitals. (Nurse role required)');
+    }
   };
 
   const columns = [
-    { header: 'Patient ID', accessor: 'id', cell: (row) => <span className="font-semibold">{row.id}</span> },
-    { header: 'Name', accessor: 'name', cell: (row) => <div className="font-semibold text-slate-800">{row.name} <span className="text-[10px] text-slate-400 font-medium block">Age: {row.age} | {row.gender}</span></div> },
-    { header: 'Blood Group', accessor: 'bloodGroup', cell: (row) => <span className="font-medium text-slate-700">{row.bloodGroup}</span> },
-    { header: 'Contact', accessor: 'phone', cell: (row) => <div className="text-slate-500 text-xs">{row.phone} <span className="block text-[10px] font-medium text-slate-400">{row.email}</span></div> },
-    { header: 'Assigned Bed', accessor: 'room', cell: (row) => <Badge>{row.room}</Badge> },
-    { header: 'Vitals Status', cell: (row) => <div className="text-[10px] text-slate-500 font-medium leading-relaxed">BP: {row.vitals.bp} <br /> SpO2: {row.vitals.spo2}</div> },
+    { header: 'Patient ID', accessor: 'id', cell: (row) => <span className="font-semibold font-mono text-xs text-blue-700">{row._id || row.id}</span> },
+    { header: 'Name', accessor: 'name', cell: (row) => <div className="font-semibold text-slate-800">{row.name} <span className="text-[10px] text-slate-400 font-medium block">Age: {row.age || 'N/A'} | {row.gender}</span></div> },
+    { header: 'Blood Group', accessor: 'bloodGroup', cell: (row) => <span className="font-medium text-slate-700">{row.bloodGroup || 'Not Recorded'}</span> },
+    { header: 'Contact', accessor: 'phone', cell: (row) => <div className="text-slate-500 text-xs">{row.phone || 'N/A'} <span className="block text-[10px] font-medium text-slate-400">{row.email}</span></div> },
+    { header: 'Assigned Bed', accessor: 'room', cell: (row) => <Badge>{row.room || 'Outpatient'}</Badge> },
+    { header: 'Vitals Status', cell: (row) => <div className="text-[10px] text-slate-500 font-medium leading-relaxed">BP: {row.vitals?.bp || 'Not Recorded'} <br /> SpO2: {row.vitals?.spo2 || 'Not Recorded'}</div> },
     {
       header: 'Actions',
       cell: (row) => (
@@ -257,7 +286,7 @@ export const PatientsPage = () => {
       <Modal
         isOpen={isVitalsOpen}
         onClose={() => setIsVitalsOpen(false)}
-        title="Update Patient Vitals Log"
+        title="Update Patient Vitals Log (Nursing Desk)"
         footer={
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setIsVitalsOpen(false)}>Cancel</Button>
@@ -266,6 +295,11 @@ export const PatientsPage = () => {
         }
       >
         <form className="space-y-4" onSubmit={handleSaveVitals}>
+          {vitalsError && (
+            <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg">
+              {vitalsError}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700">Temperature (°F)</label>
@@ -274,8 +308,8 @@ export const PatientsPage = () => {
                 step="0.1"
                 value={temp}
                 onChange={(e) => setTemp(e.target.value)}
+                placeholder="e.g. 98.6"
                 className="mt-1 w-full p-2 border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none rounded-lg text-sm"
-                required
               />
             </div>
             <div>
@@ -284,8 +318,8 @@ export const PatientsPage = () => {
                 type="text"
                 value={bp}
                 onChange={(e) => setBp(e.target.value)}
+                placeholder="e.g. 120/80"
                 className="mt-1 w-full p-2 border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none rounded-lg text-sm"
-                required
               />
             </div>
             <div>
@@ -294,8 +328,8 @@ export const PatientsPage = () => {
                 type="number"
                 value={hr}
                 onChange={(e) => setHr(e.target.value)}
+                placeholder="e.g. 72"
                 className="mt-1 w-full p-2 border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none rounded-lg text-sm"
-                required
               />
             </div>
             <div>
@@ -304,8 +338,8 @@ export const PatientsPage = () => {
                 type="number"
                 value={spo2}
                 onChange={(e) => setSpo2(e.target.value)}
+                placeholder="e.g. 98"
                 className="mt-1 w-full p-2 border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none rounded-lg text-sm"
-                required
               />
             </div>
           </div>
@@ -325,23 +359,23 @@ export const PatientsPage = () => {
             <div className="flex justify-between items-center flex-wrap gap-3 border-b border-slate-100 pb-4">
               <div>
                 <h3 className="font-bold text-lg text-slate-900">{selectedPatient.name}</h3>
-                <span className="text-xs text-slate-500">ID: {selectedPatient.id} • Room: {selectedPatient.room}</span>
+                <span className="text-xs text-slate-500">ID: {selectedPatient._id || selectedPatient.id} • Room: {selectedPatient.room || 'Outpatient'}</span>
               </div>
-              <Badge>{selectedPatient.status}</Badge>
+              <Badge>{selectedPatient.status || 'Outpatient'}</Badge>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
                 <span className="text-[10px] text-slate-400 font-bold block uppercase">Age / Gender</span>
-                <span className="text-slate-700 font-semibold block mt-0.5">{selectedPatient.age} yrs / {selectedPatient.gender}</span>
+                <span className="text-slate-700 font-semibold block mt-0.5">{selectedPatient.age || 'N/A'} yrs / {selectedPatient.gender || 'N/A'}</span>
               </div>
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
                 <span className="text-[10px] text-slate-400 font-bold block uppercase">Blood Group</span>
-                <span className="text-slate-700 font-semibold block mt-0.5">{selectedPatient.bloodGroup}</span>
+                <span className="text-slate-700 font-semibold block mt-0.5">{selectedPatient.bloodGroup || 'Not Recorded'}</span>
               </div>
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
                 <span className="text-[10px] text-slate-400 font-bold block uppercase">Contact Phone</span>
-                <span className="text-slate-700 font-semibold block mt-0.5">{selectedPatient.phone}</span>
+                <span className="text-slate-700 font-semibold block mt-0.5">{selectedPatient.phone || 'N/A'}</span>
               </div>
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
                 <span className="text-[10px] text-slate-400 font-bold block uppercase">Email</span>
@@ -354,19 +388,19 @@ export const PatientsPage = () => {
               <div className="grid grid-cols-4 gap-2 text-center text-xs">
                 <div className="p-2 border border-slate-200 rounded-lg">
                   <span className="text-[9px] text-slate-400 font-medium block">Temperature</span>
-                  <span className="font-bold text-slate-700 block mt-0.5">{selectedPatient.vitals.temp}</span>
+                  <span className="font-bold text-slate-700 block mt-0.5">{selectedPatient.vitals?.temp || 'Not Recorded'}</span>
                 </div>
                 <div className="p-2 border border-slate-200 rounded-lg">
                   <span className="text-[9px] text-slate-400 font-medium block">Blood Pressure</span>
-                  <span className="font-bold text-slate-700 block mt-0.5">{selectedPatient.vitals.bp}</span>
+                  <span className="font-bold text-slate-700 block mt-0.5">{selectedPatient.vitals?.bp || 'Not Recorded'}</span>
                 </div>
                 <div className="p-2 border border-slate-200 rounded-lg">
                   <span className="text-[9px] text-slate-400 font-medium block">Heart Rate</span>
-                  <span className="font-bold text-slate-700 block mt-0.5">{selectedPatient.vitals.heartRate}</span>
+                  <span className="font-bold text-slate-700 block mt-0.5">{selectedPatient.vitals?.heartRate || 'Not Recorded'}</span>
                 </div>
                 <div className="p-2 border border-slate-200 rounded-lg">
                   <span className="text-[9px] text-slate-400 font-medium block">SpO2 level</span>
-                  <span className="font-bold text-slate-700 block mt-0.5">{selectedPatient.vitals.spo2}</span>
+                  <span className="font-bold text-slate-700 block mt-0.5">{selectedPatient.vitals?.spo2 || 'Not Recorded'}</span>
                 </div>
               </div>
             </div>
@@ -384,7 +418,7 @@ export const PatientsPage = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-slate-600">
-                    {selectedPatient.prescriptions.length === 0 ? (
+                    {(selectedPatient.prescriptions || []).length === 0 ? (
                       <tr>
                         <td colSpan={4} className="p-4 text-center text-slate-400 italic">No prescriptions found.</td>
                       </tr>
@@ -408,18 +442,20 @@ export const PatientsPage = () => {
             <div>
               <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">Diagnosed Medical History</h4>
               <ul className="list-disc pl-5 text-xs text-slate-600 space-y-1">
-                {selectedPatient.medicalHistory.map((item, idx) => (
+                {(selectedPatient.medicalHistory || []).map((item, idx) => (
                   <li key={idx}>{item}</li>
                 ))}
               </ul>
             </div>
 
-            <div>
-              <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">Nursing Notes</h4>
-              <div className="p-3 bg-blue-50/20 border border-blue-100 rounded-xl text-xs text-slate-600 italic">
-                "{selectedPatient.nursingNotes}"
+            {selectedPatient.nursingNotes && (
+              <div>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">Nursing Notes</h4>
+                <div className="p-3 bg-blue-50/20 border border-blue-100 rounded-xl text-xs text-slate-600 italic">
+                  "{selectedPatient.nursingNotes}"
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
       </Modal>

@@ -52,6 +52,56 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    profilePicture: {
+      type: String,
+      default: '',
+    },
+    dateOfBirth: {
+      type: String,
+      default: '',
+    },
+    gender: {
+      type: String,
+      enum: ['Male', 'Female', 'Other', ''],
+      default: '',
+    },
+    bloodGroup: {
+      type: String,
+      enum: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'Not Recorded', ''],
+      default: '',
+    },
+    address: {
+      type: String,
+      default: '',
+    },
+    city: {
+      type: String,
+      default: '',
+    },
+    state: {
+      type: String,
+      default: '',
+    },
+    postalCode: {
+      type: String,
+      default: '',
+    },
+    emergencyContact: {
+      name: { type: String, default: '' },
+      phone: { type: String, default: '' },
+    },
+    bio: {
+      type: String,
+      default: '',
+    },
+    professionalDetails: {
+      department: { type: String, default: '' },
+      specialization: { type: String, default: '' },
+      licenseNumber: { type: String, default: '' },
+      experienceYears: { type: Number, default: 0 },
+      qualifications: { type: String, default: '' },
+      employeeId: { type: String, default: '' },
+    },
   },
   {
     timestamps: true,
@@ -98,6 +148,24 @@ userSchema.methods.toSafeObject = function () {
     role: this.role,
     isActive: this.isActive,
     profileId: this.profileId,
+    profilePicture: this.profilePicture || '',
+    dateOfBirth: this.dateOfBirth || '',
+    gender: this.gender || '',
+    bloodGroup: this.bloodGroup || '',
+    address: this.address || '',
+    city: this.city || '',
+    state: this.state || '',
+    postalCode: this.postalCode || '',
+    emergencyContact: this.emergencyContact || { name: '', phone: '' },
+    bio: this.bio || '',
+    professionalDetails: this.professionalDetails || {
+      department: '',
+      specialization: '',
+      licenseNumber: '',
+      experienceYears: 0,
+      qualifications: '',
+      employeeId: '',
+    },
     createdAt: this.createdAt,
     updatedAt: this.updatedAt,
   };

@@ -7,12 +7,14 @@ dotenv.config();
 
 const PORT = process.env.PORT || 5000;
 
+let server;
+
 // 2. Connect to MongoDB Atlas first, then start listening
 const startServer = async () => {
   try {
     await connectDB();
 
-    const server = app.listen(PORT, () => {
+    server = app.listen(PORT, () => {
       console.log(`MediSync AI Backend Server running on port ${PORT}`);
       console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`API Base URL: http://localhost:${PORT}/api`);
@@ -34,5 +36,20 @@ const startServer = async () => {
     process.exit(1);
   }
 };
+
+// Graceful shutdown on restart / terminate signals
+const handleShutdown = () => {
+  if (server) {
+    server.close(() => {
+      process.exit(0);
+    });
+  } else {
+    process.exit(0);
+  }
+};
+
+process.once('SIGUSR2', handleShutdown);
+process.on('SIGINT', handleShutdown);
+process.on('SIGTERM', handleShutdown);
 
 startServer();
