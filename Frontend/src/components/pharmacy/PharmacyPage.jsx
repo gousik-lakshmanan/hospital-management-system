@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { Pill, Plus, Layers, ShieldAlert, Sparkles, PlusCircle } from 'lucide-react';
-import { mockMedicines, mockPatients, pharmacyService } from '../../data/mockData';
+import { usePharmacy } from '../../context/PharmacyContext';
+import { usePrescriptions } from '../../context/PrescriptionContext';
 import { useAuth } from '../../hooks/useAuth';
+import { patientService } from '../../services/api';
 import Card from '../common/Card';
 import Table from '../common/Table';
 import Button from '../common/Button';
@@ -10,84 +12,140 @@ import Modal from '../common/Modal';
 
 export const PharmacyPage = () => {
   const { currentRole } = useAuth();
-  const [medicines, setMedicines] = useState(mockMedicines);
-  const [patients, setPatients] = useState(mockPatients);
+  const { medicines, loading, createMedicine, adjustStock } = usePharmacy();
+  const { prescriptions, dispensePrescription } = usePrescriptions();
+
+  const [patients, setPatients] = useState([]);
 
   // Modals open states
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isDispenseModalOpen, setIsDispenseModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   // Add Medicine Form
   const [medName, setMedName] = useState('');
+  const [genericName, setGenericName] = useState('');
   const [medType, setMedType] = useState('Tablet');
+  const [batchNumber, setBatchNumber] = useState('');
   const [medStock, setMedStock] = useState('');
-  const [medLimit, setMedLimit] = useState('');
+  const [medLimit, setMedLimit] = useState('10');
   const [medPrice, setMedPrice] = useState('');
   const [medExpiry, setMedExpiry] = useState('');
 
   // Dispense Form
-  const [dispPatientId, setDispPatientId] = useState('');
-  const [dispMedId, setDispMedId] = useState('');
-  const [dispQty, setDispQty] = useState(1);
+  const [dispPrescriptionId, setDispPrescriptionId] = useState('');
 
-  const handleAddMedicine = (e) => {
-    e.preventDefault();
-    if (!medName || !medStock || !medLimit || !medPrice || !medExpiry) return;
+  useEffect(() => {
+    const fetchPatients = async () => {
+      try {
+        const res = await patientService.getPatients();
+        if (res.success && Array.isArray(res.patients)) {
+          setPatients(res.patients);
+        }
+      } catch (err) {
+        console.error('Failed to load patients for pharmacy:', err);
+      }
+    };
 
-    pharmacyService.create({
+    fetchPatients();
+  }, []);
+
+  const handleAddMedicine = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!medName || !medStock || !medLimit || !medPrice || !medExpiry || isSubmitting) return;
+
+    setIsSubmitting(true);
+    setErrorMessage('');
+
+    const res = await createMedicine({
       name: medName,
-      type: medType,
-      stock: medStock,
-      threshold: medLimit,
-      price: medPrice,
-      expiryDate: medExpiry
+      genericName: genericName || medName,
+      category: medType,
+      dosageForm: medType,
+      batchNumber: batchNumber || `BAT-${Date.now().toString().slice(-6)}`,
+      quantity: parseInt(medStock) || 0,
+      reorderLevel: parseInt(medLimit) || 10,
+      unitPrice: parseFloat(medPrice) || 0,
+      expiryDate: medExpiry,
     });
 
-    setMedicines([...mockMedicines]);
-    setIsAddModalOpen(false);
+    setIsSubmitting(false);
 
-    // Clear
-    setMedName('');
-    setMedStock('');
-    setMedLimit('');
-    setMedPrice('');
-    setMedExpiry('');
-  };
-
-  const handleDispenseMed = (e) => {
-    e.preventDefault();
-    if (!dispPatientId || !dispMedId || !dispQty) return;
-
-    const success = pharmacyService.dispense(dispMedId, dispQty);
-    if (success) {
-      const pat = mockPatients.find(p => p.id === dispPatientId);
-      const medObj = mockMedicines.find(m => m.id === dispMedId);
-      if (pat && medObj) {
-        const presc = pat.prescriptions.find(pr => pr.medicine.toLowerCase().includes(medObj.name.toLowerCase()));
-        if (presc) presc.pharmacistGiven = true;
-      }
-      
-      setMedicines([...mockMedicines]);
-      setPatients([...mockPatients]);
-      setIsDispenseModalOpen(false);
-
-      // Clear
-      setDispPatientId('');
-      setDispMedId('');
-      setDispQty(1);
+    if (res.success) {
+      setIsAddModalOpen(false);
+      setMedName('');
+      setGenericName('');
+      setBatchNumber('');
+      setMedStock('');
+      setMedLimit('10');
+      setMedPrice('');
+      setMedExpiry('');
     } else {
-      alert('Insufficient stock to dispense!');
+      setErrorMessage(res.message || 'Failed to register medicine');
     }
   };
 
+  const handleDispensePrescription = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!dispPrescriptionId || isSubmitting) return;
+
+    setIsSubmitting(true);
+    setErrorMessage('');
+
+    const res = await dispensePrescription(dispPrescriptionId);
+    setIsSubmitting(false);
+
+    if (res.success) {
+      setIsDispenseModalOpen(false);
+      setDispPrescriptionId('');
+    } else {
+      setErrorMessage(res.message || 'Failed to dispense prescription');
+    }
+  };
+
+  const pendingPrescriptions = prescriptions.filter((p) => p.status === 'Pending');
+
   const columns = [
-    { header: 'Medicine ID', accessor: 'id', cell: (row) => <span className="font-semibold">{row.id}</span> },
-    { header: 'Generic Name', accessor: 'name', cell: (row) => <span className="font-semibold text-slate-800">{row.name}</span> },
-    { header: 'Type', accessor: 'type', cell: (row) => <span className="text-slate-500 font-medium">{row.type}</span> },
-    { header: 'Stock Bags', accessor: 'stock', cell: (row) => <span className={`font-semibold ${row.stock === 0 ? 'text-rose-600' : (row.stock <= row.threshold ? 'text-amber-600' : 'text-slate-700')}`}>{row.stock} units</span> },
-    { header: 'Unit Price', accessor: 'price', cell: (row) => <span className="text-slate-600 font-medium">₹{row.price}</span> },
-    { header: 'Expiry Date', accessor: 'expiryDate', cell: (row) => <span className="text-slate-400 font-medium">{row.expiryDate}</span> },
-    { header: 'Inventory Status', accessor: 'status', cell: (row) => <Badge>{row.status}</Badge> }
+    {
+      header: 'Medicine Name',
+      accessor: 'name',
+      cell: (row) => (
+        <div>
+          <span className="font-semibold text-slate-800 block text-xs">{row.name}</span>
+          <span className="text-[10px] text-slate-400 font-mono">{row.genericName || row.name} · {row.batchNumber}</span>
+        </div>
+      ),
+    },
+    { header: 'Category', accessor: 'type', cell: (row) => <span className="text-slate-500 font-medium text-xs">{row.category || row.type}</span> },
+    {
+      header: 'Available Stock',
+      accessor: 'stock',
+      cell: (row) => (
+        <span
+          className={`font-semibold text-xs ${
+            row.stock === 0
+              ? 'text-rose-600'
+              : row.stock <= (row.reorderLevel || row.threshold)
+              ? 'text-amber-600'
+              : 'text-slate-700'
+          }`}
+        >
+          {row.quantity ?? row.stock} units
+        </span>
+      ),
+    },
+    { header: 'Unit Price', accessor: 'price', cell: (row) => <span className="text-slate-600 font-medium text-xs">₹{row.unitPrice ?? row.price}</span> },
+    {
+      header: 'Expiry Date',
+      accessor: 'expiryDate',
+      cell: (row) => (
+        <span className="text-slate-400 font-medium text-xs">
+          {row.expiryDate ? new Date(row.expiryDate).toLocaleDateString() : '—'}
+        </span>
+      ),
+    },
+    { header: 'Inventory Status', accessor: 'status', cell: (row) => <Badge>{row.status}</Badge> },
   ];
 
   return (
@@ -99,12 +157,12 @@ export const PharmacyPage = () => {
         </div>
         {currentRole !== 'patient' && currentRole !== 'doctor' && currentRole !== 'nurse' && (
           <div className="flex gap-2">
-            <Button variant="primary" icon={Plus} onClick={() => setIsAddModalOpen(true)}>
+            <Button variant="primary" icon={Plus} onClick={() => { setIsAddModalOpen(true); setErrorMessage(''); }}>
               Register Formulation
             </Button>
             {currentRole === 'pharmacist' && (
-              <Button variant="secondary" icon={Pill} onClick={() => setIsDispenseModalOpen(true)}>
-                Dispense Prescriptions
+              <Button variant="secondary" icon={Pill} onClick={() => { setIsDispenseModalOpen(true); setErrorMessage(''); }}>
+                Dispense Prescriptions ({pendingPrescriptions.length})
               </Button>
             )}
           </div>
@@ -118,7 +176,7 @@ export const PharmacyPage = () => {
             data={medicines}
             searchKey="name"
             placeholder="Search medicine by name..."
-            emptyMessage="No medicines registered."
+            emptyMessage={loading ? 'Loading pharmacy formulations...' : 'No medicines registered.'}
           />
         </div>
       </Card>
@@ -130,27 +188,48 @@ export const PharmacyPage = () => {
         title="Register Formulation Medicine"
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setIsAddModalOpen(false)}>Cancel</Button>
-            <Button variant="primary" onClick={handleAddMedicine}>Register Medicine</Button>
+            <Button variant="outline" onClick={() => setIsAddModalOpen(false)} disabled={isSubmitting}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={handleAddMedicine} disabled={isSubmitting}>
+              {isSubmitting ? 'Registering...' : 'Register Medicine'}
+            </Button>
           </div>
         }
       >
         <form className="space-y-4" onSubmit={handleAddMedicine}>
+          {errorMessage && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-medium">
+              {errorMessage}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-700">Generic Name</label>
+              <label className="block text-xs font-semibold text-slate-700">Brand Name</label>
               <input
                 type="text"
                 value={medName}
                 onChange={(e) => setMedName(e.target.value)}
-                placeholder="e.g. Atorvastatin 10mg"
+                placeholder="e.g. Paracetamol 500mg"
                 className="mt-1 w-full p-2 border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none rounded-lg text-sm"
                 required
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700">Formulation Type</label>
+              <label className="block text-xs font-semibold text-slate-700">Generic Name</label>
+              <input
+                type="text"
+                value={genericName}
+                onChange={(e) => setGenericName(e.target.value)}
+                placeholder="e.g. Paracetamol"
+                className="mt-1 w-full p-2 border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none rounded-lg text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700">Formulation Category</label>
               <select
                 value={medType}
                 onChange={(e) => setMedType(e.target.value)}
@@ -161,13 +240,30 @@ export const PharmacyPage = () => {
                 <option value="Syrup">Syrup</option>
                 <option value="Injection">Injection</option>
                 <option value="Inhaler">Inhaler</option>
+                <option value="Drops">Drops</option>
+                <option value="Powder">Powder</option>
+                <option value="Cream">Cream</option>
+                <option value="Ointment">Ointment</option>
+                <option value="Other">Other</option>
               </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700">Batch Number</label>
+              <input
+                type="text"
+                value={batchNumber}
+                onChange={(e) => setBatchNumber(e.target.value)}
+                placeholder="e.g. PCM-2026-99"
+                className="mt-1 w-full p-2 border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none rounded-lg text-sm"
+              />
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-700">Initial Stock</label>
               <input
                 type="number"
+                min="0"
                 value={medStock}
                 onChange={(e) => setMedStock(e.target.value)}
                 placeholder="e.g. 500"
@@ -180,6 +276,7 @@ export const PharmacyPage = () => {
               <label className="block text-xs font-semibold text-slate-700">Alert Threshold Limit</label>
               <input
                 type="number"
+                min="0"
                 value={medLimit}
                 onChange={(e) => setMedLimit(e.target.value)}
                 placeholder="e.g. 100"
@@ -193,9 +290,10 @@ export const PharmacyPage = () => {
               <input
                 type="number"
                 step="0.01"
+                min="0"
                 value={medPrice}
                 onChange={(e) => setMedPrice(e.target.value)}
-                placeholder="e.g. 12.50"
+                placeholder="e.g. 15.00"
                 className="mt-1 w-full p-2 border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none rounded-lg text-sm"
                 required
               />
@@ -219,56 +317,51 @@ export const PharmacyPage = () => {
       <Modal
         isOpen={isDispenseModalOpen}
         onClose={() => setIsDispenseModalOpen(false)}
-        title="Dispense Medicine"
+        title="Dispense Doctor Prescriptions"
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setIsDispenseModalOpen(false)}>Cancel</Button>
-            <Button variant="primary" onClick={handleDispenseMed}>Dispense Units</Button>
+            <Button variant="outline" onClick={() => setIsDispenseModalOpen(false)} disabled={isSubmitting}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleDispensePrescription}
+              disabled={isSubmitting || pendingPrescriptions.length === 0 || !dispPrescriptionId}
+            >
+              {isSubmitting ? 'Dispensing...' : 'Dispense Prescription'}
+            </Button>
           </div>
         }
       >
-        <form className="space-y-4" onSubmit={handleDispenseMed}>
-          <div>
-            <label className="block text-xs font-semibold text-slate-700">Patient Directory</label>
-            <select
-              value={dispPatientId}
-              onChange={(e) => setDispPatientId(e.target.value)}
-              className="mt-1 w-full p-2 border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none rounded-lg text-sm"
-              required
-            >
-              <option value="">-- Choose Patient --</option>
-              {patients.map(p => (
-                <option key={p.id} value={p.id}>{p.name} ({p.id})</option>
-              ))}
-            </select>
-          </div>
+        <form className="space-y-4" onSubmit={handleDispensePrescription}>
+          {errorMessage && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-medium">
+              {errorMessage}
+            </div>
+          )}
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-700">Inventory Formulation</label>
-            <select
-              value={dispMedId}
-              onChange={(e) => setDispMedId(e.target.value)}
-              className="mt-1 w-full p-2 border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none rounded-lg text-sm"
-              required
-            >
-              <option value="">-- Choose Medicine --</option>
-              {medicines.map(m => (
-                <option key={m.id} value={m.id}>{m.name} ({m.stock} units left)</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-700">Quantity</label>
-            <input
-              type="number"
-              min="1"
-              value={dispQty}
-              onChange={(e) => setDispQty(e.target.value)}
-              className="mt-1 w-full p-2 border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none rounded-lg text-sm"
-              required
-            />
-          </div>
+          {pendingPrescriptions.length === 0 ? (
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500 text-center">
+              No pending doctor prescriptions waiting to be dispensed.
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Select Pending Prescription Order</label>
+              <select
+                value={dispPrescriptionId}
+                onChange={(e) => setDispPrescriptionId(e.target.value)}
+                className="w-full p-2.5 border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none rounded-lg text-xs"
+                required
+              >
+                <option value="">-- Choose Pending Prescription --</option>
+                {pendingPrescriptions.map((pr) => (
+                  <option key={pr._id} value={pr._id}>
+                    Patient: {pr.patientName} | Dr. {pr.prescribedByName} | {pr.medicines?.map((m) => `${m.medicineName} x${m.quantity}`).join(', ')}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </form>
       </Modal>
     </div>

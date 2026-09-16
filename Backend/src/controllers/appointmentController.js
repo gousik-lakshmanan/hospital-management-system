@@ -2,149 +2,191 @@ import mongoose from 'mongoose';
 import Appointment from '../models/Appointment.js';
 import User from '../models/User.js';
 
-// Helper to resolve provider User in MongoDB
-const resolveProvider = async (type, providerId, department, service) => {
-  let provider = null;
-
-  // 1. Try finding by MongoDB ObjectId
-  if (providerId && mongoose.Types.ObjectId.isValid(providerId)) {
-    provider = await User.findOne({ _id: providerId, role: type, isActive: true });
-  }
-
-  // 2. Try finding by profileId (e.g. DOC001, NUR001)
-  if (!provider && providerId) {
-    provider = await User.findOne({ profileId: providerId, role: type, isActive: true });
-  }
-
-  // 3. Fallback: department / email mappings if provided
-  if (!provider && type === 'doctor') {
-    if (department && department.toLowerCase().includes('cardio')) {
-      provider = await User.findOne({ email: 'doctor@medisync.local', role: 'doctor' }) ||
-                 await User.findOne({ email: 'arun.kumar@medisync.com', role: 'doctor' });
-    } else if (department && department.toLowerCase().includes('general')) {
-      provider = await User.findOne({ email: 'priya.sharma@medisync.com', role: 'doctor' });
-    } else if (department && department.toLowerCase().includes('ortho')) {
-      provider = await User.findOne({ email: 'rahul.menon@medisync.com', role: 'doctor' });
-    } else if (department && department.toLowerCase().includes('derma')) {
-      provider = await User.findOne({ email: 'sneha.iyer@medisync.com', role: 'doctor' });
-    }
-  }
-
-  if (!provider && type === 'nurse') {
-    if (service && service.toLowerCase().includes('pressure')) {
-      provider = await User.findOne({ email: 'meena@medisync.com', role: 'nurse' });
-    } else if (service && service.toLowerCase().includes('screen')) {
-      provider = await User.findOne({ email: 'kavya@medisync.com', role: 'nurse' });
-    } else if (service && service.toLowerCase().includes('blood') || service?.toLowerCase().includes('sample')) {
-      provider = await User.findOne({ email: 'divya@medisync.com', role: 'nurse' });
-    } else {
-      provider = await User.findOne({ email: 'anitha@medisync.com', role: 'nurse' }) ||
-                 await User.findOne({ email: 'nurse@medisync.local', role: 'nurse' });
-    }
-  }
-
-  // 4. Default fallback: any active user with that role
-  if (!provider) {
-    provider = await User.findOne({ role: type, isActive: true });
-  }
-
-  return provider;
-};
-
-// @desc    Get active provider list (Doctors and Nurses) for booking options
-// @route   GET /api/appointments/providers
-// @access  Private
+/**
+ * @desc    Get active provider list (Doctors and Nurses) for booking options
+ * @route   GET /api/appointments/providers
+ * @access  Private (Authenticated users)
+ */
 export const getProviders = async (req, res, next) => {
   try {
-    const doctors = await User.find({ role: 'doctor', isActive: true }).select('firstName lastName email profileId role');
-    const nurses = await User.find({ role: 'nurse', isActive: true }).select('firstName lastName email profileId role');
+    const doctors = await User.find({ role: 'doctor', isActive: true })
+      .select('firstName lastName email role professionalDetails isActive')
+      .sort({ firstName: 1 });
+
+    const nurses = await User.find({ role: 'nurse', isActive: true })
+      .select('firstName lastName email role professionalDetails isActive')
+      .sort({ firstName: 1 });
+
+    const mappedDoctors = doctors.map((d) => ({
+      _id: d._id.toString(),
+      id: d._id.toString(),
+      name: `${d.firstName} ${d.lastName}`.trim(),
+      firstName: d.firstName,
+      lastName: d.lastName,
+      email: d.email,
+      role: d.role,
+      isActive: d.isActive,
+      department: d.professionalDetails?.department || 'General Medicine',
+      specialization: d.professionalDetails?.specialization || '',
+      room: d.professionalDetails?.employeeId || '',
+    }));
+
+    const mappedNurses = nurses.map((n) => ({
+      _id: n._id.toString(),
+      id: n._id.toString(),
+      name: `${n.firstName} ${n.lastName}`.trim(),
+      firstName: n.firstName,
+      lastName: n.lastName,
+      email: n.email,
+      role: n.role,
+      isActive: n.isActive,
+      department: n.professionalDetails?.department || 'General Nursing',
+      specialization: n.professionalDetails?.specialization || '',
+      shift: n.professionalDetails?.specialization || 'General Duty',
+    }));
 
     return res.status(200).json({
       success: true,
-      doctors: doctors.map((d) => ({
-        id: d._id.toString(),
-        name: `${d.firstName} ${d.lastName}`.trim(),
-        email: d.email,
-        profileId: d.profileId,
-        role: d.role,
-      })),
-      nurses: nurses.map((n) => ({
-        id: n._id.toString(),
-        name: `${n.firstName} ${n.lastName}`.trim(),
-        email: n.email,
-        profileId: n.profileId,
-        role: n.role,
-      })),
+      doctors: mappedDoctors,
+      nurses: mappedNurses,
+      providers: [...mappedDoctors, ...mappedNurses],
     });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Book a new doctor or nurse appointment
-// @route   POST /api/appointments
-// @access  Private (Patient, Admin, Receptionist)
+/**
+ * @desc    Book a new doctor or nurse appointment
+ * @route   POST /api/appointments
+ * @access  Private (Patient only)
+ */
 export const bookAppointment = async (req, res, next) => {
   try {
+    // 1. Verify authenticated user role
+    if (req.user.role !== 'patient' && req.user.role !== 'admin' && req.user.role !== 'receptionist') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only patients can book appointment requests.',
+      });
+    }
+
     const {
-      type = 'doctor',
+      type: rawType,
       providerId,
-      department,
-      service,
-      reason = 'Consultation',
       date,
       time,
+      service,
+      reason,
       notes = '',
     } = req.body;
 
+    // 2. Validate provider ID
+    if (!providerId || !mongoose.Types.ObjectId.isValid(providerId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a valid provider identifier.',
+      });
+    }
+
+    // 3. Validate date and time
     if (!date || !time) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide both appointment date and time.',
+        message: 'Both appointment date and time are required.',
       });
     }
 
-    const apptType = type === 'nurse' ? 'nurse' : 'doctor';
+    // 4. Server-side provider verification from MongoDB User collection
+    const provider = await User.findOne({
+      _id: providerId,
+      isActive: true,
+    });
 
-    // Resolve Provider User
-    const provider = await resolveProvider(apptType, providerId, department, service);
-    if (!provider) {
+    if (!provider || !['doctor', 'nurse'].includes(provider.role)) {
       return res.status(404).json({
         success: false,
-        message: `No active ${apptType} found for the requested booking.`,
+        message: 'The selected healthcare provider was not found or is currently inactive.',
       });
     }
 
-    // Patient identity is derived securely from JWT
-    const patientUserId = req.user._id;
-    const patientName = req.user.name || `${req.user.firstName} ${req.user.lastName}`.trim();
+    const type = rawType || provider.role;
+    if (type !== provider.role) {
+      return res.status(400).json({
+        success: false,
+        message: `Provider role mismatch. Expected a ${type}, but provider is a ${provider.role}.`,
+      });
+    }
+
+    // 6. Server-side derive patient identity from JWT authenticated user
+    const patientId = req.user._id;
+    const patientName = `${req.user.firstName} ${req.user.lastName}`.trim();
     const patientEmail = req.user.email;
 
-    const assignedDepartment = department || (apptType === 'doctor' ? 'General Medicine' : 'General Nursing');
-    const assignedService = service || (apptType === 'doctor' ? 'Consultation' : 'General Checkup');
+    // 7. Server-side derive provider identity
+    const providerName = `${provider.firstName} ${provider.lastName}`.trim();
+    const assignedDepartment =
+      provider.professionalDetails?.department ||
+      (type === 'doctor' ? 'General Medicine' : 'General Nursing');
+    const assignedService =
+      type === 'doctor' ? 'Consultation' : service || 'General Diagnostic Check';
+    const assignedReason = reason ? reason.trim() : (type === 'doctor' ? 'Clinical Consultation' : assignedService);
 
-    // Create Appointment in MongoDB
+    // 8. Strict Provider Scheduling Conflict Check (active statuses)
+    const slotConflict = await Appointment.findOne({
+      providerId: provider._id,
+      date: date.trim(),
+      time: time.trim(),
+      status: { $in: ['Pending', 'Confirmed', 'Rescheduled'] },
+    });
+
+    if (slotConflict) {
+      return res.status(409).json({
+        success: false,
+        message: 'This time slot is already booked for the selected provider. Please choose another time.',
+      });
+    }
+
+    // 9. Duplicate Request Prevention for the same patient
+    const duplicateRequest = await Appointment.findOne({
+      patientId,
+      providerId: provider._id,
+      date: date.trim(),
+      time: time.trim(),
+      status: { $in: ['Pending', 'Confirmed', 'Rescheduled'] },
+    });
+
+    if (duplicateRequest) {
+      return res.status(409).json({
+        success: false,
+        message: 'You already have an active appointment request with this provider at the selected date and time.',
+      });
+    }
+
+    // 10. Create and persist Appointment in MongoDB
     const newAppointment = new Appointment({
-      type: apptType,
-      patientId: patientUserId,
+      type,
+      patientId,
       patientName,
       patientEmail,
       providerId: provider._id,
-      providerName: provider.name || `${provider.firstName} ${provider.lastName}`.trim(),
+      providerName,
       department: assignedDepartment,
       service: assignedService,
-      reason,
-      date,
-      time,
-      status: 'Scheduled',
-      notes,
+      reason: assignedReason,
+      date: date.trim(),
+      time: time.trim(),
+      status: 'Pending',
+      requestedAt: new Date(),
+      respondedAt: null,
+      notes: notes ? notes.trim() : '',
     });
 
     await newAppointment.save();
 
     return res.status(201).json({
       success: true,
-      message: 'Appointment booked successfully',
+      message: 'Appointment request submitted successfully. Pending provider confirmation.',
       appointment: newAppointment,
     });
   } catch (error) {
@@ -152,13 +194,20 @@ export const bookAppointment = async (req, res, next) => {
   }
 };
 
-// @desc    Get appointments for the logged-in patient
-// @route   GET /api/appointments/my
-// @access  Private (Patient)
+/**
+ * @desc    Get appointments for the logged-in patient
+ * @route   GET /api/appointments/my
+ * @access  Private (Patient)
+ */
 export const getMyAppointments = async (req, res, next) => {
   try {
-    // STRICT OWNER QUERY: patientId = req.user._id
-    const appointments = await Appointment.find({ patientId: req.user._id }).sort({ date: -1, time: 1 });
+    const { status } = req.query;
+    const query = { patientId: req.user._id };
+    if (status) {
+      query.status = status;
+    }
+
+    const appointments = await Appointment.find(query).sort({ date: -1, time: 1, createdAt: -1 });
 
     return res.status(200).json({
       success: true,
@@ -170,16 +219,23 @@ export const getMyAppointments = async (req, res, next) => {
   }
 };
 
-// @desc    Get appointments assigned to the logged-in doctor
-// @route   GET /api/appointments/doctor
-// @access  Private (Doctor)
+/**
+ * @desc    Get appointments assigned to the logged-in doctor
+ * @route   GET /api/appointments/doctor
+ * @access  Private (Doctor)
+ */
 export const getDoctorAppointments = async (req, res, next) => {
   try {
-    // STRICT OWNER QUERY: providerId = req.user._id AND type = 'doctor'
-    const appointments = await Appointment.find({
+    const { status } = req.query;
+    const query = {
       providerId: req.user._id,
       type: 'doctor',
-    }).sort({ date: -1, time: 1 });
+    };
+    if (status) {
+      query.status = status;
+    }
+
+    const appointments = await Appointment.find(query).sort({ date: -1, time: 1, createdAt: -1 });
 
     return res.status(200).json({
       success: true,
@@ -191,16 +247,23 @@ export const getDoctorAppointments = async (req, res, next) => {
   }
 };
 
-// @desc    Get appointments assigned to the logged-in nurse
-// @route   GET /api/appointments/nurse
-// @access  Private (Nurse)
+/**
+ * @desc    Get appointments assigned to the logged-in nurse
+ * @route   GET /api/appointments/nurse
+ * @access  Private (Nurse)
+ */
 export const getNurseAppointments = async (req, res, next) => {
   try {
-    // STRICT OWNER QUERY: providerId = req.user._id AND type = 'nurse'
-    const appointments = await Appointment.find({
+    const { status } = req.query;
+    const query = {
       providerId: req.user._id,
       type: 'nurse',
-    }).sort({ date: -1, time: 1 });
+    };
+    if (status) {
+      query.status = status;
+    }
+
+    const appointments = await Appointment.find(query).sort({ date: -1, time: 1, createdAt: -1 });
 
     return res.status(200).json({
       success: true,
@@ -212,12 +275,19 @@ export const getNurseAppointments = async (req, res, next) => {
   }
 };
 
-// @desc    Get all appointments (Hospital Wide)
-// @route   GET /api/appointments
-// @access  Private (Admin, Receptionist)
+/**
+ * @desc    Get all appointments (Hospital Wide)
+ * @route   GET /api/appointments
+ * @access  Private (Admin, Receptionist)
+ */
 export const getAllAppointments = async (req, res, next) => {
   try {
-    const appointments = await Appointment.find().sort({ date: -1, time: 1 });
+    const { status, type } = req.query;
+    const query = {};
+    if (status) query.status = status;
+    if (type) query.type = type;
+
+    const appointments = await Appointment.find(query).sort({ date: -1, time: 1, createdAt: -1 });
 
     return res.status(200).json({
       success: true,
@@ -229,15 +299,35 @@ export const getAllAppointments = async (req, res, next) => {
   }
 };
 
-// @desc    Update appointment status
-// @route   PATCH /api/appointments/:id/status
-// @access  Private
+/**
+ * @desc    Update appointment status (Accept, Reject, Conclude, or Patient Cancel)
+ * @route   PATCH /api/appointments/:id/status
+ * @access  Private
+ */
 export const updateAppointmentStatus = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { status, notes } = req.body;
 
-    let appointment = await Appointment.findById(id);
+    if (!status) {
+      return res.status(400).json({
+        success: false,
+        message: 'Target status is required.',
+      });
+    }
+
+    const ALLOWED_STATUSES = ['Pending', 'Confirmed', 'Rejected', 'Rescheduled', 'Completed', 'Cancelled'];
+    if (!ALLOWED_STATUSES.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid status: ${status}. Allowed: ${ALLOWED_STATUSES.join(', ')}`,
+      });
+    }
+
+    let appointment = null;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      appointment = await Appointment.findById(id);
+    }
     if (!appointment) {
       appointment = await Appointment.findOne({ id });
     }
@@ -245,42 +335,99 @@ export const updateAppointmentStatus = async (req, res, next) => {
     if (!appointment) {
       return res.status(404).json({
         success: false,
-        message: 'Appointment not found',
+        message: 'Appointment record not found.',
       });
     }
 
-    // Authorization check
     const isPatientOwner = appointment.patientId.toString() === req.user._id.toString();
     const isProviderOwner = appointment.providerId.toString() === req.user._id.toString();
-    const isStaff = ['admin', 'receptionist'].includes(req.user.role);
+    const isAdmin = req.user.role === 'admin';
 
-    if (!isPatientOwner && !isProviderOwner && !isStaff) {
+    // 1. Authorization checks
+    if (req.user.role === 'patient') {
+      if (!isPatientOwner) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. You cannot modify another patient\'s appointment.',
+        });
+      }
+      if (status !== 'Cancelled') {
+        return res.status(403).json({
+          success: false,
+          message: 'Patients are only permitted to cancel their own appointments.',
+        });
+      }
+      if (['Completed', 'Cancelled', 'Rejected'].includes(appointment.status)) {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot cancel an appointment that is already ${appointment.status.toLowerCase()}.`,
+        });
+      }
+    } else if (req.user.role === 'doctor') {
+      if (!isProviderOwner || appointment.type !== 'doctor') {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. You can only manage doctor appointments assigned directly to you.',
+        });
+      }
+    } else if (req.user.role === 'nurse') {
+      if (!isProviderOwner || appointment.type !== 'nurse') {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. You can only manage nurse appointments assigned directly to you.',
+        });
+      }
+    } else if (!isAdmin && req.user.role !== 'receptionist') {
       return res.status(403).json({
         success: false,
-        message: 'You are not authorized to update this appointment',
+        message: 'Unauthorized to modify appointments.',
       });
     }
 
-    // Patient can only cancel their own appointment
-    if (isPatientOwner && !isProviderOwner && !isStaff && status !== 'Cancelled') {
-      return res.status(403).json({
-        success: false,
-        message: 'Patients can only cancel appointments',
-      });
+    // 2. Lifecycle Status Transitions
+    if (isProviderOwner || isAdmin) {
+      // Terminal status protection
+      if (['Completed', 'Cancelled', 'Rejected'].includes(appointment.status)) {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot change status of an appointment that is already ${appointment.status}.`,
+        });
+      }
+
+      if (status === 'Confirmed' && appointment.status !== 'Pending' && appointment.status !== 'Rescheduled') {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot confirm an appointment with current status: ${appointment.status}.`,
+        });
+      }
+
+      if (status === 'Rejected' && appointment.status !== 'Pending' && appointment.status !== 'Rescheduled') {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot reject an appointment with current status: ${appointment.status}.`,
+        });
+      }
+
+      if (status === 'Completed' && appointment.status !== 'Confirmed' && appointment.status !== 'Rescheduled') {
+        return res.status(400).json({
+          success: false,
+          message: 'Only Confirmed or Rescheduled appointments can be marked as Completed.',
+        });
+      }
     }
 
-    if (status) {
-      appointment.status = status;
-    }
+    // 3. Apply updates
+    appointment.status = status;
+    appointment.respondedAt = new Date();
     if (notes) {
-      appointment.notes = appointment.notes ? `${appointment.notes} | ${notes}` : notes;
+      appointment.notes = appointment.notes ? `${appointment.notes} | ${notes.trim()}` : notes.trim();
     }
 
     await appointment.save();
 
     return res.status(200).json({
       success: true,
-      message: `Appointment status updated to ${appointment.status}`,
+      message: `Appointment status successfully updated to ${appointment.status}.`,
       appointment,
     });
   } catch (error) {
@@ -288,9 +435,11 @@ export const updateAppointmentStatus = async (req, res, next) => {
   }
 };
 
-// @desc    Reschedule appointment date/time
-// @route   PATCH /api/appointments/:id/reschedule
-// @access  Private
+/**
+ * @desc    Reschedule appointment date/time with conflict validation
+ * @route   PATCH /api/appointments/:id/reschedule
+ * @access  Private (Provider / Admin)
+ */
 export const rescheduleAppointment = async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -299,11 +448,14 @@ export const rescheduleAppointment = async (req, res, next) => {
     if (!date || !time) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide both new date and time',
+        message: 'Please provide both new appointment date and time.',
       });
     }
 
-    let appointment = await Appointment.findById(id);
+    let appointment = null;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      appointment = await Appointment.findById(id);
+    }
     if (!appointment) {
       appointment = await Appointment.findOne({ id });
     }
@@ -311,25 +463,71 @@ export const rescheduleAppointment = async (req, res, next) => {
     if (!appointment) {
       return res.status(404).json({
         success: false,
-        message: 'Appointment not found',
+        message: 'Appointment record not found.',
       });
     }
 
-    appointment.date = date;
-    appointment.time = time;
+    const isProviderOwner = appointment.providerId.toString() === req.user._id.toString();
+    const isAdmin = req.user.role === 'admin';
+
+    if (!isProviderOwner && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You can only reschedule appointments assigned to you.',
+      });
+    }
+
+    if (['Completed', 'Cancelled', 'Rejected'].includes(appointment.status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot reschedule an appointment that is already ${appointment.status}.`,
+      });
+    }
+
+    // Re-verify Provider Scheduling Conflict for the new date/time
+    const slotConflict = await Appointment.findOne({
+      _id: { $ne: appointment._id },
+      providerId: appointment.providerId,
+      date: date.trim(),
+      time: time.trim(),
+      status: { $in: ['Pending', 'Confirmed', 'Rescheduled'] },
+    });
+
+    if (slotConflict) {
+      return res.status(409).json({
+        success: false,
+        message: 'The requested reschedule slot is already occupied. Please choose another date or time.',
+      });
+    }
+
+    // Apply updates
+    appointment.date = date.trim();
+    appointment.time = time.trim();
     appointment.status = 'Rescheduled';
+    appointment.respondedAt = new Date();
     if (notes) {
-      appointment.notes = appointment.notes ? `${appointment.notes} | ${notes}` : notes;
+      appointment.notes = appointment.notes ? `${appointment.notes} | ${notes.trim()}` : notes.trim();
     }
 
     await appointment.save();
 
     return res.status(200).json({
       success: true,
-      message: 'Appointment rescheduled successfully',
+      message: `Appointment successfully rescheduled to ${appointment.date} at ${appointment.time}.`,
       appointment,
     });
   } catch (error) {
     next(error);
   }
+};
+
+export default {
+  getProviders,
+  bookAppointment,
+  getMyAppointments,
+  getDoctorAppointments,
+  getNurseAppointments,
+  getAllAppointments,
+  updateAppointmentStatus,
+  rescheduleAppointment,
 };

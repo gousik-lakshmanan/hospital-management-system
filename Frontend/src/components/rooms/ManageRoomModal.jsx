@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { Bed, User, CheckCircle, AlertTriangle, Plus, X, ShieldAlert, Clock, ArrowRight } from 'lucide-react';
 import { useRooms } from '../../context/RoomContext';
 import Modal from '../common/Modal';
@@ -8,39 +8,53 @@ import Badge from '../common/Badge';
 export const ManageRoomModal = ({ isOpen, onClose, roomNumber, onOpenAllocate }) => {
   const { rooms, releaseBed } = useRooms();
 
-  const [confirmReleaseBed, setConfirmReleaseBed] = useState(null); // { id, bedNumber, patientName }
+  const [confirmReleaseBed, setConfirmReleaseBed] = useState(null); // { id, _id, bedNumber, patientName }
+  const [isReleasing, setIsReleasing] = useState(false);
 
-  const currentRoom = rooms.find(r => r.roomNumber === roomNumber);
+  const currentRoom = rooms.find(
+    (r) => (r.roomNumber || r.roomId) === roomNumber
+  );
   if (!currentRoom) return null;
 
   const beds = currentRoom.beds || [];
-  const occupiedCount = beds.filter(b => (b.status || '').toUpperCase() === 'OCCUPIED').length;
-  const availableCount = beds.filter(b => (b.status || '').toUpperCase() === 'AVAILABLE').length;
+  const occupiedCount = beds.filter(
+    (b) => (b.status || '').toUpperCase() === 'OCCUPIED'
+  ).length;
+  const availableCount = beds.filter(
+    (b) => (b.status || '').toUpperCase() === 'AVAILABLE'
+  ).length;
 
-  const handleConfirmRelease = () => {
-    if (!confirmReleaseBed) return;
+  const handleConfirmRelease = async () => {
+    if (!confirmReleaseBed || isReleasing) return;
 
-    releaseBed({
-      roomNumber: currentRoom.roomNumber,
-      bedId: confirmReleaseBed.id
+    setIsReleasing(true);
+    const bedId = confirmReleaseBed._id || confirmReleaseBed.id;
+    await releaseBed({
+      roomNumber: currentRoom.roomNumber || currentRoom.roomId,
+      bedId,
     });
 
+    setIsReleasing(false);
     setConfirmReleaseBed(null);
-    onClose(); // Automatically close manage modal so the bed status animation is visible on the main page
+    onClose();
   };
+
+  const roomDisplayName = currentRoom.type || currentRoom.roomName;
+  const roomDisplayId = currentRoom.roomNumber || currentRoom.roomId;
+  const roomTotalBeds = currentRoom.capacity || currentRoom.totalBeds;
 
   return (
     <>
       <Modal
         isOpen={isOpen && !confirmReleaseBed}
         onClose={onClose}
-        title={`Bed Management — ${currentRoom.type} (${currentRoom.roomNumber})`}
+        title={`Bed Management — ${roomDisplayName} (${roomDisplayId})`}
         size="lg"
         footer={
           <div className="flex justify-between items-center w-full">
             <div className="text-xs text-slate-500">
               <span className="font-semibold text-slate-700">{availableCount} Available</span> ·{' '}
-              <span className="font-semibold text-rose-600">{occupiedCount} Occupied</span> out of {currentRoom.totalBeds} Beds
+              <span className="font-semibold text-rose-600">{occupiedCount} Occupied</span> out of {roomTotalBeds} Beds
             </div>
             <Button variant="outline" onClick={onClose}>
               Close
@@ -53,7 +67,7 @@ export const ManageRoomModal = ({ isOpen, onClose, roomNumber, onOpenAllocate })
           <div className="grid grid-cols-3 gap-3 p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
             <div className="text-center">
               <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Total Units</span>
-              <span className="text-base font-bold text-slate-800">{currentRoom.totalBeds} Beds</span>
+              <span className="text-base font-bold text-slate-800">{roomTotalBeds} Beds</span>
             </div>
             <div className="text-center border-x border-slate-200">
               <span className="text-[10px] uppercase font-bold text-rose-500 block tracking-wider">Occupied</span>
@@ -65,14 +79,15 @@ export const ManageRoomModal = ({ isOpen, onClose, roomNumber, onOpenAllocate })
             </div>
           </div>
 
-          {/* 10 Beds List View */}
+          {/* Beds List View */}
           <div className="space-y-2.5 max-h-[50vh] overflow-y-auto pr-1">
             {beds.map((bed) => {
               const isOccupied = (bed.status || '').toUpperCase() === 'OCCUPIED';
+              const bedIdentifier = bed._id || bed.id;
 
               return (
                 <div
-                  key={bed.id}
+                  key={bedIdentifier}
                   className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 transition-all duration-300 ${
                     isOccupied
                       ? 'bg-rose-50/40 border-rose-200'
@@ -93,7 +108,7 @@ export const ManageRoomModal = ({ isOpen, onClose, roomNumber, onOpenAllocate })
                       <div className="flex items-center gap-2">
                         <h4 className="text-sm font-bold text-slate-800">{bed.bedNumber}</h4>
                         <span className="text-[10px] font-mono text-slate-400 bg-white/80 px-1.5 py-0.5 rounded border border-slate-200">
-                          {bed.id}
+                          {bedIdentifier}
                         </span>
                         <span
                           className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
@@ -131,7 +146,7 @@ export const ManageRoomModal = ({ isOpen, onClose, roomNumber, onOpenAllocate })
                     {isOccupied ? (
                       <button
                         onClick={() => setConfirmReleaseBed(bed)}
-                        className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-rose-600 hover:bg-rose-700 text-white transition-colors shadow-xs active:scale-95"
+                        className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-rose-600 hover:bg-rose-700 text-white transition-colors shadow-xs active:scale-95 cursor-pointer"
                       >
                         Release Bed
                       </button>
@@ -139,9 +154,9 @@ export const ManageRoomModal = ({ isOpen, onClose, roomNumber, onOpenAllocate })
                       <button
                         onClick={() => {
                           onClose();
-                          if (onOpenAllocate) onOpenAllocate(currentRoom.roomNumber);
+                          if (onOpenAllocate) onOpenAllocate(roomDisplayId);
                         }}
-                        className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors shadow-xs active:scale-95 flex items-center gap-1"
+                        className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors shadow-xs active:scale-95 flex items-center gap-1 cursor-pointer"
                       >
                         <Plus className="w-3.5 h-3.5" />
                         Allocate
@@ -164,11 +179,11 @@ export const ManageRoomModal = ({ isOpen, onClose, roomNumber, onOpenAllocate })
           size="sm"
           footer={
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setConfirmReleaseBed(null)}>
+              <Button variant="outline" onClick={() => setConfirmReleaseBed(null)} disabled={isReleasing}>
                 Cancel
               </Button>
-              <Button variant="danger" onClick={handleConfirmRelease}>
-                Release Bed Space
+              <Button variant="danger" onClick={handleConfirmRelease} disabled={isReleasing}>
+                {isReleasing ? 'Releasing...' : 'Release Bed Space'}
               </Button>
             </div>
           }
@@ -179,8 +194,8 @@ export const ManageRoomModal = ({ isOpen, onClose, roomNumber, onOpenAllocate })
               <div className="text-xs text-amber-900">
                 <p className="font-semibold">Release Bed Space Confirmation</p>
                 <p className="mt-1">
-                  Are you sure you want to release <strong>{confirmReleaseBed.bedNumber} ({confirmReleaseBed.id})</strong> in{' '}
-                  <strong>{currentRoom.type}</strong>?
+                  Are you sure you want to release <strong>{confirmReleaseBed.bedNumber} ({confirmReleaseBed._id || confirmReleaseBed.id})</strong> in{' '}
+                  <strong>{roomDisplayName}</strong>?
                 </p>
                 {confirmReleaseBed.patientName && (
                   <p className="mt-1 text-amber-800">

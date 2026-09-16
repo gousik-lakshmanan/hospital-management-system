@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { Bed, CheckCircle2, XCircle, Clock, AlertTriangle, ShieldCheck, Inbox } from 'lucide-react';
 import Modal from '../common/Modal';
 import Button from '../common/Button';
@@ -16,16 +16,17 @@ export const AdminBedRequestsModal = ({ isOpen, onClose, onOpenAccept }) => {
   const sortedRequests = [...bedRequests].sort((a, b) => {
     if (a.status === 'pending' && b.status !== 'pending') return -1;
     if (a.status !== 'pending' && b.status === 'pending') return 1;
-    return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+    return new Date(b.requestedAt || b.createdAt || 0) - new Date(a.requestedAt || a.createdAt || 0);
   });
 
   const pendingCount = bedRequests.filter((r) => r.status === 'pending').length;
 
-  const handleConfirmReject = () => {
+  const handleConfirmReject = async () => {
     if (!rejectingRequest || isProcessingReject) return;
 
     setIsProcessingReject(true);
-    rejectBedRequest(rejectingRequest.id);
+    const requestId = rejectingRequest.id || rejectingRequest._id;
+    await rejectBedRequest(requestId);
     setIsProcessingReject(false);
     setRejectingRequest(null);
   };
@@ -55,7 +56,7 @@ export const AdminBedRequestsModal = ({ isOpen, onClose, onOpenAccept }) => {
       header: 'Section Vacancy',
       accessor: 'sectionId',
       cell: (row) => {
-        const sec = rooms.find((r) => r.roomNumber === row.sectionId);
+        const sec = rooms.find((r) => (r.roomNumber || r.roomId) === row.sectionId);
         const avail = sec
           ? (sec.beds || []).filter((b) => (b.status || '').toUpperCase() === 'AVAILABLE').length
           : 0;
@@ -180,7 +181,7 @@ export const AdminBedRequestsModal = ({ isOpen, onClose, onOpenAccept }) => {
               <div>
                 <span className="text-base font-bold text-slate-800">Reject Bed Request</span>
                 <span className="block text-[11px] font-normal text-slate-500">
-                  Request ID: {rejectingRequest.id}
+                  Request ID: {rejectingRequest.id || rejectingRequest._id}
                 </span>
               </div>
             </div>

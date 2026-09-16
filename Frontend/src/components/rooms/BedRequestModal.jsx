@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Bed, ArrowLeft, Send, AlertTriangle, ShieldCheck, CheckCircle } from 'lucide-react';
+﻿import React, { useState, useEffect } from 'react';
+import { Bed, ArrowLeft, Send, AlertTriangle, ShieldCheck } from 'lucide-react';
 import Modal from '../common/Modal';
 import Button from '../common/Button';
 import { useRooms } from '../../context/RoomContext';
@@ -23,7 +23,7 @@ export const BedRequestModal = ({ isOpen, onClose, onSuccess }) => {
 
   // Live section details
   const liveSection = selectedSection
-    ? rooms.find((r) => r.roomNumber === selectedSection.roomNumber)
+    ? rooms.find((r) => (r.roomNumber || r.roomId) === (selectedSection.roomNumber || selectedSection.roomId))
     : null;
 
   const currentAvailableBeds = liveSection
@@ -39,14 +39,15 @@ export const BedRequestModal = ({ isOpen, onClose, onSuccess }) => {
     setStep(2);
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  const handleSubmit = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
     if (!selectedSection || isSubmitting) return;
 
     setIsSubmitting(true);
     setErrorMessage(null);
 
-    const result = createBedRequest(selectedSection.roomNumber);
+    const sectionId = selectedSection.roomId || selectedSection.roomNumber;
+    const result = await createBedRequest(sectionId);
 
     if (result.success) {
       setIsSubmitting(false);
@@ -71,7 +72,7 @@ export const BedRequestModal = ({ isOpen, onClose, onSuccess }) => {
           </div>
           <div>
             <span className="text-base font-bold text-slate-800">
-              {step === 1 ? 'Request a Bed – Select Section' : `Request Bed in ${selectedSection?.type}`}
+              {step === 1 ? 'Request a Bed – Select Section' : `Request Bed in ${selectedSection?.type || selectedSection?.roomName}`}
             </span>
             <span className="block text-[11px] font-normal text-slate-500">
               {step === 1 ? 'Step 1 of 2: Which section would you like a bed in?' : 'Step 2 of 2: Confirm your bed space request'}
@@ -129,10 +130,12 @@ export const BedRequestModal = ({ isOpen, onClose, onSuccess }) => {
                 (b) => (b.status || '').toUpperCase() === 'AVAILABLE'
               ).length;
               const isFull = available <= 0;
+              const sectionId = room.roomId || room.roomNumber;
+              const sectionName = room.roomName || room.type;
 
               return (
                 <button
-                  key={room.roomNumber}
+                  key={sectionId}
                   type="button"
                   onClick={() => handleSelectSection(room)}
                   disabled={isFull}
@@ -154,10 +157,10 @@ export const BedRequestModal = ({ isOpen, onClose, onSuccess }) => {
                     </div>
                     <div>
                       <span className="font-bold text-sm text-slate-800 block group-hover:text-blue-600 transition-colors">
-                        {room.type}
+                        {sectionName}
                       </span>
                       <span className="text-[11px] font-mono text-slate-400 block mt-0.5">
-                        {room.roomNumber} · {room.totalBeds} Total Beds
+                        {sectionId} · {room.capacity || room.totalBeds} Total Beds
                       </span>
                     </div>
                   </div>
@@ -215,8 +218,8 @@ export const BedRequestModal = ({ isOpen, onClose, onSuccess }) => {
                   <Bed className="w-6 h-6" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-slate-800">{selectedSection.type}</h4>
-                  <span className="text-xs font-mono text-slate-500">{selectedSection.roomNumber}</span>
+                  <h4 className="text-sm font-bold text-slate-800">{selectedSection.roomName || selectedSection.type}</h4>
+                  <span className="text-xs font-mono text-slate-500">{selectedSection.roomId || selectedSection.roomNumber}</span>
                 </div>
               </div>
 
@@ -241,7 +244,7 @@ export const BedRequestModal = ({ isOpen, onClose, onSuccess }) => {
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Section Allocation:</span>
-                <span className="font-semibold text-slate-700">{selectedSection.type} Department</span>
+                <span className="font-semibold text-slate-700">{selectedSection.roomName || selectedSection.type} Department</span>
               </div>
             </div>
           </div>

@@ -6,6 +6,8 @@ import { NotificationProvider } from './context/NotificationContext';
 import { AppointmentProvider } from './context/AppointmentContext';
 import { RoomProvider } from './context/RoomContext';
 import { BloodBankProvider } from './context/BloodBankContext';
+import { PharmacyProvider } from './context/PharmacyContext';
+import { PrescriptionProvider } from './context/PrescriptionContext';
 import AppRoutes from './routes/AppRoutes';
 
 function App() {
@@ -17,7 +19,11 @@ function App() {
             <AppointmentProvider>
               <RoomProvider>
                 <BloodBankProvider>
-                  <AppRoutes />
+                  <PharmacyProvider>
+                    <PrescriptionProvider>
+                      <AppRoutes />
+                    </PrescriptionProvider>
+                  </PharmacyProvider>
                 </BloodBankProvider>
               </RoomProvider>
             </AppointmentProvider>

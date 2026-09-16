@@ -38,18 +38,22 @@ const startServer = async () => {
 };
 
 // Graceful shutdown on restart / terminate signals
-const handleShutdown = () => {
+const handleShutdown = (signal) => {
   if (server) {
     server.close(() => {
-      process.exit(0);
+      if (signal === 'SIGUSR2') {
+        process.kill(process.pid, 'SIGUSR2');
+      } else {
+        process.exit(0);
+      }
     });
   } else {
     process.exit(0);
   }
 };
 
-process.once('SIGUSR2', handleShutdown);
-process.on('SIGINT', handleShutdown);
-process.on('SIGTERM', handleShutdown);
+process.once('SIGUSR2', () => handleShutdown('SIGUSR2'));
+process.on('SIGINT', () => handleShutdown('SIGINT'));
+process.on('SIGTERM', () => handleShutdown('SIGTERM'));
 
 startServer();

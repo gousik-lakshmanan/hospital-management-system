@@ -22,12 +22,14 @@ import Modal from '../../components/common/Modal';
 import { mockPatients, mockDietPlans, mockBills, billingService } from '../../data/mockData';
 import { useAuth } from '../../hooks/useAuth';
 import { useAppointments } from '../../context/AppointmentContext';
+import { usePrescriptions } from '../../context/PrescriptionContext';
 import BookAppointmentModal from '../../components/appointments/BookAppointmentModal';
 import { patientService } from '../../services/api';
 
 export const PatientDashboard = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { prescriptions: livePrescriptions } = usePrescriptions();
   const { appointments, cancelAppointment, refreshAppointments } = useAppointments();
 
   const [patientData, setPatientData] = useState(null);
@@ -341,28 +343,25 @@ export const PatientDashboard = () => {
                   {/* Card Footer: ID and Cancel action */}
                   <div className="flex items-center justify-between pt-1 text-xs border-t border-slate-100">
                     <span className="text-[10px] font-mono text-slate-400 font-semibold">
-                      ID: {appt.id}
+                      ID: {appt.id || appt._id?.slice(-6)}
                     </span>
-                    {appt.status === 'Scheduled' && (
+                    {(appt.status === 'Pending' || appt.status === 'Confirmed' || appt.status === 'Rescheduled' || appt.status === 'Scheduled') ? (
                       <button
                         onClick={() => setCancelModalAppt(appt)}
                         className="text-[11px] font-semibold text-rose-600 hover:text-rose-800 hover:underline cursor-pointer"
                       >
-                        Cancel
+                        Cancel Visit
                       </button>
-                    )}
-                    {appt.status === 'Confirmed' && (
-                      <span className="text-[10px] font-semibold text-emerald-600 flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3" /> Confirmed
-                      </span>
-                    )}
-                    {appt.status === 'Completed' && (
-                      <span className="text-[10px] font-semibold text-slate-500">
-                        Concluded
-                      </span>
-                    )}
-                    {appt.status === 'Cancelled' && (
+                    ) : appt.status === 'Rejected' ? (
                       <span className="text-[10px] font-semibold text-rose-500">
+                        Declined
+                      </span>
+                    ) : appt.status === 'Completed' ? (
+                      <span className="text-[10px] font-semibold text-emerald-600 flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3" /> Concluded
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-semibold text-slate-400">
                         Cancelled
                       </span>
                     )}
@@ -442,12 +441,27 @@ export const PatientDashboard = () => {
           {/* Current medications */}
           <Card title="Daily Medication Prescriptions" subtitle="Your current active doctor prescription round">
             <div className="divide-y divide-slate-100">
-              {(patientData?.prescriptions || []).length === 0 ? (
-                <div className="py-6 text-center text-xs text-slate-400">
-                  No active prescriptions assigned
-                </div>
-              ) : (
-                (patientData?.prescriptions || []).map((pr, idx) => (
+              {(() => {
+                const displayPrescriptions = livePrescriptions && livePrescriptions.length > 0
+                  ? livePrescriptions.flatMap(p => (p.medicines || []).map(m => ({
+                      medicine: m.medicineName,
+                      dosage: m.dosage,
+                      duration: m.duration,
+                      pharmacistGiven: p.status === 'Dispensed',
+                      status: p.status,
+                      prescribedByName: p.prescribedByName
+                    })))
+                  : (patientData?.prescriptions || []);
+
+                if (displayPrescriptions.length === 0) {
+                  return (
+                    <div className="py-6 text-center text-xs text-slate-400">
+                      No active prescriptions assigned
+                    </div>
+                  );
+                }
+
+                return displayPrescriptions.map((pr, idx) => (
                   <div key={idx} className="py-3 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">
@@ -460,11 +474,11 @@ export const PatientDashboard = () => {
                     </div>
                     <div className="text-right">
                       <span className="text-[10px] font-semibold text-slate-500 block">Duration: {pr.duration}</span>
-                      <Badge className="mt-1">{pr.pharmacistGiven ? 'Dispensed' : 'Pending Counter'}</Badge>
+                      <Badge className="mt-1">{pr.pharmacistGiven || pr.status === 'Dispensed' ? 'Dispensed' : 'Pending Counter'}</Badge>
                     </div>
                   </div>
-                ))
-              )}
+                ));
+              })()}
             </div>
           </Card>
         </div>
@@ -649,19 +663,36 @@ export const PatientDashboard = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-600">
-                {(activePatient?.prescriptions || []).length === 0 ? (
-                  <tr>
-                    <td colSpan={3} className="p-4 text-center text-slate-400">No active prescriptions</td>
-                  </tr>
-                ) : (
-                  (activePatient?.prescriptions || []).map((pr, idx) => (
+                {(() => {
+                  const displayPrescriptions = livePrescriptions && livePrescriptions.length > 0
+                    ? livePrescriptions.flatMap(p => (p.medicines || []).map(m => ({
+                        medicine: m.medicineName,
+                        dosage: m.dosage,
+                        duration: m.duration,
+                        status: p.status,
+                        prescribedByName: p.prescribedByName
+                      })))
+                    : (activePatient?.prescriptions || []);
+
+                  if (displayPrescriptions.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan={3} className="p-4 text-center text-slate-400">No active prescriptions</td>
+                      </tr>
+                    );
+                  }
+
+                  return displayPrescriptions.map((pr, idx) => (
                     <tr key={idx}>
-                      <td className="p-3 font-semibold text-slate-800">{pr.medicine}</td>
+                      <td className="p-3 font-semibold text-slate-800">
+                        {pr.medicine}
+                        {pr.status && <span className="ml-2 text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-bold">{pr.status}</span>}
+                      </td>
                       <td className="p-3">{pr.dosage}</td>
                       <td className="p-3">{pr.duration}</td>
                     </tr>
-                  ))
-                )}
+                  ));
+                })()}
               </tbody>
             </table>
           </div>
@@ -759,6 +790,43 @@ export const PatientDashboard = () => {
           )}
         </div>
       </Modal>
+
+      {/* Cancel Appointment Confirmation Modal */}
+      <Modal
+        isOpen={Boolean(cancelModalAppt)}
+        onClose={() => setCancelModalAppt(null)}
+        title="Cancel Appointment Request"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="white" onClick={() => setCancelModalAppt(null)}>
+              Keep Appointment
+            </Button>
+            <Button variant="primary" className="bg-rose-600 hover:bg-rose-700" onClick={handleConfirmCancel}>
+              Confirm Cancellation
+            </Button>
+          </div>
+        }
+      >
+        {cancelModalAppt && (
+          <div className="space-y-3 text-xs text-slate-600">
+            <p>
+              Are you sure you want to cancel your scheduled appointment with{' '}
+              <strong className="text-slate-800">{cancelModalAppt.providerName}</strong> on{' '}
+              <strong className="text-slate-800">{cancelModalAppt.date} at {cancelModalAppt.time}</strong>?
+            </p>
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-[11px]">
+              This action will mark your appointment status as Cancelled and remove your slot reservation.
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Book Doctor/Nurse Appointment Modal */}
+      <BookAppointmentModal
+        isOpen={isBookModalOpen}
+        onClose={() => setIsBookModalOpen(false)}
+        initialType={bookingType}
+      />
     </div>
   );
 };

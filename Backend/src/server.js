@@ -2,6 +2,9 @@ import dotenv from 'dotenv';
 import connectDB from './config/db.js';
 import app from './app.js';
 
+import { seedRoomsAndBeds } from './seeds/roomBedSeed.js';
+import { seedPharmacy } from './seeds/pharmacySeed.js';
+
 // 1. Load environment variables
 dotenv.config();
 
@@ -13,6 +16,8 @@ let server;
 const startServer = async () => {
   try {
     await connectDB();
+    await seedRoomsAndBeds();
+    await seedPharmacy();
 
     server = app.listen(PORT, () => {
       console.log(`MediSync AI Backend Server running on port ${PORT}`);

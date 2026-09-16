@@ -1,78 +1,104 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { mockRooms, mockPatients, mockActivities } from '../data/mockData';
+﻿import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { roomService } from '../services/roomService';
+import { bedRequestService } from '../services/bedRequestService';
 import { NotificationContext } from './NotificationContext';
 import { useAuth } from '../hooks/useAuth';
 
 export const RoomContext = createContext();
-
-const STORAGE_KEY = 'medisync_beds';
-const REQUESTS_STORAGE_KEY = 'medisync_bed_requests';
 
 export const RoomProvider = ({ children }) => {
   const notifCtx = useContext(NotificationContext);
   const addNotification = notifCtx ? notifCtx.addNotification : null;
   const { currentRole, user } = useAuth();
 
-  const [rooms, setRooms] = useState(() => {
+  const [rooms, setRooms] = useState([]);
+  const [bedRequests, setBedRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch all rooms with their dynamic bed objects
+  const fetchRooms = useCallback(async () => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length === 6) {
-          const totalBedCount = parsed.reduce((sum, r) => sum + (Array.isArray(r.beds) ? r.beds.length : 0), 0);
-          if (totalBedCount === 33) {
-            return parsed;
-          }
+      const res = await roomService.getRooms();
+      if (res.success && Array.isArray(res.data)) {
+        // For each room, fetch its individual beds to populate the grid
+        const populatedRooms = await Promise.all(
+          res.data.map(async (room) => {
+            try {
+              const bedRes = await roomService.getRoomBeds(room.roomId);
+              const beds = (bedRes.data || []).map((b) => ({
+                ...b,
+                id: b._id || b.bedNumber,
+              }));
+              return {
+                ...room,
+                roomNumber: room.roomId,
+                type: room.roomName,
+                totalBeds: room.capacity,
+                beds,
+              };
+            } catch (err) {
+              return {
+                ...room,
+                roomNumber: room.roomId,
+                type: room.roomName,
+                totalBeds: room.capacity,
+                beds: [],
+              };
+            }
+          })
+        );
+        setRooms(populatedRooms);
+      }
+    } catch (error) {
+      console.error('Failed to fetch rooms from backend:', error);
+    }
+  }, []);
+
+  // Fetch bed requests (Admin gets all, Patient gets their own)
+  const fetchBedRequests = useCallback(async () => {
+    if (!user) return;
+    try {
+      if (currentRole === 'admin') {
+        const res = await bedRequestService.getAllBedRequests();
+        if (res.success && Array.isArray(res.data)) {
+          setBedRequests(res.data.map(r => ({ ...r, id: r._id })));
+        }
+      } else if (currentRole === 'patient') {
+        const res = await bedRequestService.getMyBedRequests();
+        if (res.success && Array.isArray(res.data)) {
+          setBedRequests(res.data.map(r => ({ ...r, id: r._id })));
         }
       }
-    } catch (e) {
-      console.error('Failed to parse rooms from localStorage', e);
+    } catch (error) {
+      console.error('Failed to fetch bed requests:', error);
     }
-    return mockRooms;
-  });
+  }, [currentRole, user]);
 
-  const [bedRequests, setBedRequests] = useState(() => {
-    try {
-      const saved = localStorage.getItem(REQUESTS_STORAGE_KEY);
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (e) {
-      console.error('Failed to parse bed requests from localStorage', e);
-    }
-    return [];
-  });
-
-  // Keep localStorage updated for rooms
+  // Initial load on authentication state change
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(rooms));
-    } catch (e) {
-      console.error('Failed to persist rooms to localStorage', e);
-    }
-  }, [rooms]);
+    const initData = async () => {
+      setLoading(true);
+      await Promise.all([fetchRooms(), fetchBedRequests()]);
+      setLoading(false);
+    };
 
-  // Keep localStorage updated for bed requests
-  useEffect(() => {
-    try {
-      localStorage.setItem(REQUESTS_STORAGE_KEY, JSON.stringify(bedRequests));
-    } catch (e) {
-      console.error('Failed to persist bed requests to localStorage', e);
+    if (user) {
+      initData();
     }
-  }, [bedRequests]);
+  }, [user, fetchRooms, fetchBedRequests]);
 
   // Derived Dynamic Statistics
-  const allBeds = rooms.flatMap(r => r.beds || []);
+  const allBeds = rooms.flatMap((r) => r.beds || []);
   const totalRooms = rooms.length;
   const totalBeds = allBeds.length;
-  const occupiedBeds = allBeds.filter(b => (b.status || '').toUpperCase() === 'OCCUPIED').length;
-  const availableBeds = allBeds.filter(b => (b.status || '').toUpperCase() === 'AVAILABLE').length;
+  const occupiedBeds = allBeds.filter((b) => (b.status || '').toUpperCase() === 'OCCUPIED').length;
+  const availableBeds = allBeds.filter((b) => (b.status || '').toUpperCase() === 'AVAILABLE').length;
 
   /**
    * Get all beds for a specific room
    */
   const getRoomBeds = (roomNumber) => {
-    const room = rooms.find(r => r.roomNumber === roomNumber);
+    const room = rooms.find((r) => r.roomNumber === roomNumber || r.roomId === roomNumber);
     return room ? room.beds : [];
   };
 
@@ -80,16 +106,15 @@ export const RoomProvider = ({ children }) => {
    * Get only available beds for a specific room
    */
   const getAvailableBeds = (roomNumber) => {
-    const room = rooms.find(r => r.roomNumber === roomNumber);
+    const room = rooms.find((r) => r.roomNumber === roomNumber || r.roomId === roomNumber);
     if (!room) return [];
-    return room.beds.filter(b => (b.status || '').toUpperCase() === 'AVAILABLE');
+    return (room.beds || []).filter((b) => (b.status || '').toUpperCase() === 'AVAILABLE');
   };
 
   /**
    * Allocate Bed Space (Admin Only)
    */
-  const allocateBed = ({ roomNumber, bedId, patientId, patientName }) => {
-    // Action-level role permission guard
+  const allocateBed = async ({ roomNumber, bedId, patientId, patientName }) => {
     if (currentRole !== 'admin') {
       if (addNotification) {
         addNotification('Access Denied', 'Only administrators are authorized to allocate beds.', 'Emergency');
@@ -97,88 +122,30 @@ export const RoomProvider = ({ children }) => {
       return { success: false, error: 'Unauthorized: Only Administrator can allocate beds.' };
     }
 
-    if (!roomNumber || !bedId || !patientId) {
-      return { success: false, error: 'Missing required allocation parameters.' };
-    }
-
-    let allocatedPatientName = patientName;
-    if (!allocatedPatientName) {
-      const pObj = mockPatients.find(p => p.id === patientId);
-      allocatedPatientName = pObj ? pObj.name : `Patient ${patientId}`;
-    }
-
-    let bedUpdated = false;
-    let targetRoomName = '';
-    let targetBedNum = '';
-
-    const updatedRooms = rooms.map(room => {
-      if (room.roomNumber !== roomNumber) return room;
-
-      targetRoomName = room.type;
-
-      const updatedBeds = room.beds.map(bed => {
-        if (bed.id !== bedId && bed.bedNumber !== bedId) return bed;
-
-        // Duplicate allocation prevention check
-        if ((bed.status || '').toUpperCase() === 'OCCUPIED') {
-          return bed; // Cannot re-allocate an occupied bed
+    try {
+      const res = await roomService.allocateBed({ bedId, patientId });
+      if (res.success) {
+        await fetchRooms();
+        if (addNotification) {
+          addNotification(
+            'Bed Space Allocated',
+            res.message || `Bed allocated successfully.`,
+            'System'
+          );
         }
-
-        bedUpdated = true;
-        targetBedNum = bed.bedNumber;
-        return {
-          ...bed,
-          status: 'OCCUPIED',
-          patientId: patientId,
-          patientName: allocatedPatientName,
-          allocatedAt: new Date().toISOString()
-        };
-      });
-
-      return {
-        ...room,
-        beds: updatedBeds
-      };
-    });
-
-    if (!bedUpdated) {
-      return { success: false, error: 'Selected bed is already occupied or does not exist.' };
+        return { success: true, data: res.data };
+      }
+      return { success: false, error: res.message || 'Allocation failed' };
+    } catch (error) {
+      const errorMsg = error.response?.data?.message || error.message || 'Failed to allocate bed';
+      return { success: false, error: errorMsg };
     }
-
-    setRooms(updatedRooms);
-
-    // Update patient record if in mockPatients
-    const targetPatient = mockPatients.find(p => p.id === patientId);
-    if (targetPatient) {
-      targetPatient.room = `${targetRoomName} - ${targetBedNum}`;
-      targetPatient.status = 'Admitted';
-    }
-
-    // Log Activity
-    mockActivities.unshift({
-      id: Date.now(),
-      text: `Bed ${roomNumber}-${targetBedNum} Allocated to ${allocatedPatientName}`,
-      time: 'Just now',
-      type: 'info'
-    });
-
-    // Send toast notification
-    if (addNotification) {
-      addNotification(
-        'Bed Space Allocated',
-        `Bed ${bedId} in ${targetRoomName} (${roomNumber}) allocated to ${allocatedPatientName}.`,
-        'System'
-      );
-    }
-
-    return { success: true };
   };
 
   /**
    * Release Bed Space (Admin Only)
    */
-  const releaseBed = ({ roomNumber, bedId }) => {
-    // Action-level role permission guard
+  const releaseBed = async ({ roomNumber, bedId }) => {
     if (currentRole !== 'admin') {
       if (addNotification) {
         addNotification('Access Denied', 'Only administrators are authorized to release beds.', 'Emergency');
@@ -186,301 +153,113 @@ export const RoomProvider = ({ children }) => {
       return { success: false, error: 'Unauthorized: Only Administrator can release beds.' };
     }
 
-    if (!roomNumber || !bedId) {
-      return { success: false, error: 'Missing room or bed identifier.' };
-    }
-
-    let bedReleased = false;
-    let releasedPatientName = '';
-    let targetRoomName = '';
-    let targetBedNum = '';
-
-    const updatedRooms = rooms.map(room => {
-      if (room.roomNumber !== roomNumber) return room;
-
-      targetRoomName = room.type;
-
-      const updatedBeds = room.beds.map(bed => {
-        if (bed.id !== bedId && bed.bedNumber !== bedId) return bed;
-
-        if ((bed.status || '').toUpperCase() !== 'OCCUPIED') {
-          return bed;
+    try {
+      const res = await roomService.releaseBed(bedId);
+      if (res.success) {
+        await fetchRooms();
+        if (addNotification) {
+          addNotification(
+            'Bed Released',
+            res.message || `Bed released successfully and is now available.`,
+            'System'
+          );
         }
-
-        bedReleased = true;
-        releasedPatientName = bed.patientName;
-        targetBedNum = bed.bedNumber;
-
-        return {
-          ...bed,
-          status: 'AVAILABLE',
-          patientId: null,
-          patientName: null,
-          allocatedAt: null
-        };
-      });
-
-      return {
-        ...room,
-        beds: updatedBeds
-      };
-    });
-
-    if (!bedReleased) {
-      return { success: false, error: 'Bed is not currently occupied.' };
+        return { success: true, data: res.data };
+      }
+      return { success: false, error: res.message || 'Failed to release bed' };
+    } catch (error) {
+      const errorMsg = error.response?.data?.message || error.message || 'Failed to release bed';
+      return { success: false, error: errorMsg };
     }
-
-    setRooms(updatedRooms);
-
-    // Log Activity
-    mockActivities.unshift({
-      id: Date.now(),
-      text: `Bed ${roomNumber}-${targetBedNum} Released from ${releasedPatientName || 'Patient'}`,
-      time: 'Just now',
-      type: 'info'
-    });
-
-    // Send toast notification
-    if (addNotification) {
-      addNotification(
-        'Bed Released',
-        `Bed ${bedId} in ${targetRoomName} (${roomNumber}) is now available.`,
-        'System'
-      );
-    }
-
-    return { success: true };
   };
 
   /**
-   * Patient creates a bed request for a ROOM SECTION only (never selects a bed number)
+   * Patient creates a bed request for a ROOM SECTION only
    */
-  const createBedRequest = (sectionId) => {
+  const createBedRequest = async (sectionId) => {
     if (currentRole !== 'patient') {
       return { success: false, message: 'Only patients can request a bed.' };
     }
 
-    const targetSection = rooms.find(r => r.roomNumber === sectionId);
-    if (!targetSection) {
-      return { success: false, message: 'Selected section does not exist.' };
+    try {
+      const res = await bedRequestService.createBedRequest({ sectionId });
+      if (res.success) {
+        await fetchBedRequests();
+        if (addNotification) {
+          addNotification(
+            'New Bed Request',
+            res.message || `Bed request for section submitted successfully.`,
+            'System'
+          );
+        }
+        const createdReq = { ...res.data, id: res.data._id };
+        return { success: true, request: createdReq };
+      }
+      return { success: false, message: res.message || 'Failed to submit bed request' };
+    } catch (error) {
+      const errorMsg = error.response?.data?.message || error.message || 'Failed to create bed request';
+      return { success: false, message: errorMsg };
     }
-
-    // Live section availability check
-    const sectionAvailableBeds = (targetSection.beds || []).filter(
-      b => (b.status || '').toUpperCase() === 'AVAILABLE'
-    ).length;
-
-    if (sectionAvailableBeds <= 0) {
-      return { success: false, message: 'No beds are currently available in this section.' };
-    }
-
-    const patientId = user?.id || 'P-105';
-    const patientName = user?.name || 'Gousik Lakshmanan';
-
-    // Duplicate pending request check for same patient & section
-    const hasExistingPending = bedRequests.some(
-      req => req.requesterId === patientId && req.sectionId === sectionId && req.status === 'pending'
-    );
-
-    if (hasExistingPending) {
-      return {
-        success: false,
-        message: 'You already have a pending bed request for this section.'
-      };
-    }
-
-    const now = new Date().toISOString();
-    const newRequest = {
-      id: `BED-REQ-${Date.now()}`,
-      requesterId: patientId,
-      requesterName: patientName,
-      requesterRole: 'patient',
-      sectionId: targetSection.roomNumber,
-      sectionName: targetSection.type,
-      requestedAt: now,
-      status: 'pending',
-      assignedBedId: null,
-      assignedBedNumber: null,
-      createdAt: now,
-      updatedAt: now
-    };
-
-    // Bed availability remains unchanged upon request creation
-    setBedRequests(prev => [newRequest, ...prev]);
-
-    if (addNotification) {
-      addNotification(
-        'New Bed Request',
-        `New bed request from ${patientName} for ${targetSection.type} (${targetSection.roomNumber}).`,
-        'System'
-      );
-    }
-
-    return { success: true, request: newRequest };
   };
 
   /**
    * Admin accepts a pending bed request and allocates an actual available bed
    */
-  const acceptBedRequest = (requestId, bedId) => {
+  const acceptBedRequest = async (requestId, bedId) => {
     if (currentRole !== 'admin') {
       return { success: false, message: 'Unauthorized: Only Administrator can accept bed requests.' };
     }
 
-    const targetRequest = bedRequests.find(r => r.id === requestId);
-    if (!targetRequest) {
-      return { success: false, message: 'Bed request not found.' };
-    }
-
-    if (targetRequest.status !== 'pending') {
-      return { success: false, message: `Request is already ${targetRequest.status}.` };
-    }
-
-    const targetSection = rooms.find(r => r.roomNumber === targetRequest.sectionId);
-    if (!targetSection) {
-      return { success: false, message: 'Requested section not found.' };
-    }
-
-    // Find and validate the selected bed strictly in the requested section
-    const targetBed = (targetSection.beds || []).find(
-      b => b.id === bedId || b.bedNumber === bedId
-    );
-
-    if (!targetBed) {
-      return {
-        success: false,
-        message: 'Invalid bed selection. Please select an available bed from the requested section.'
-      };
-    }
-
-    if (targetBed.roomId !== targetRequest.sectionId) {
-      return {
-        success: false,
-        message: 'Invalid bed selection. The selected bed does not belong to the requested section.'
-      };
-    }
-
-    // Strict live availability check
-    if ((targetBed.status || '').toUpperCase() !== 'AVAILABLE') {
-      return {
-        success: false,
-        message: 'This bed is no longer available. Please select another available bed.'
-      };
-    }
-
-    // Perform atomic-style state update for room beds and request
-    let bedAssignedNumber = targetBed.bedNumber;
-    let bedAssignedId = targetBed.id;
-    const now = new Date().toISOString();
-
-    const updatedRooms = rooms.map(room => {
-      if (room.roomNumber !== targetRequest.sectionId) return room;
-
-      const updatedBeds = room.beds.map(b => {
-        if (b.id !== bedAssignedId) return b;
-
+    try {
+      const res = await bedRequestService.approveBedRequest(requestId, bedId);
+      if (res.success) {
+        await Promise.all([fetchRooms(), fetchBedRequests()]);
+        if (addNotification) {
+          addNotification(
+            'Bed Request Approved',
+            res.message || 'Bed request approved successfully.',
+            'System'
+          );
+        }
         return {
-          ...b,
-          status: 'OCCUPIED',
-          patientId: targetRequest.requesterId,
-          patientName: targetRequest.requesterName,
-          allocatedAt: now
+          success: true,
+          bedNumber: res.data?.bed?.bedNumber,
+          patientName: res.data?.request?.requesterName,
         };
-      });
-
-      return {
-        ...room,
-        beds: updatedBeds
-      };
-    });
-
-    setRooms(updatedRooms);
-
-    // Update bed request to approved
-    setBedRequests(prev =>
-      prev.map(r =>
-        r.id === requestId
-          ? {
-              ...r,
-              status: 'approved',
-              assignedBedId: bedAssignedId,
-              assignedBedNumber: bedAssignedNumber,
-              updatedAt: now
-            }
-          : r
-      )
-    );
-
-    // Update mockPatients if present
-    const targetPatient = mockPatients.find(p => p.id === targetRequest.requesterId);
-    if (targetPatient) {
-      targetPatient.room = `${targetSection.type} - ${bedAssignedNumber}`;
-      targetPatient.status = 'Admitted';
+      }
+      return { success: false, message: res.message || 'Approval failed' };
+    } catch (error) {
+      const errorMsg = error.response?.data?.message || error.message || 'Failed to approve bed request';
+      return { success: false, message: errorMsg };
     }
-
-    // Log activity
-    mockActivities.unshift({
-      id: Date.now(),
-      text: `Bed Request Approved: ${targetSection.type}-${bedAssignedNumber} Allocated to ${targetRequest.requesterName}`,
-      time: 'Just now',
-      type: 'info'
-    });
-
-    // Send toast notification
-    if (addNotification) {
-      addNotification(
-        'Bed Request Approved',
-        `Bed ${bedAssignedNumber} in ${targetSection.type} allocated to ${targetRequest.requesterName}.`,
-        'System'
-      );
-    }
-
-    return { success: true, bedNumber: bedAssignedNumber, patientName: targetRequest.requesterName };
   };
 
   /**
    * Admin rejects a pending bed request
    */
-  const rejectBedRequest = (requestId) => {
+  const rejectBedRequest = async (requestId) => {
     if (currentRole !== 'admin') {
       return { success: false, message: 'Unauthorized: Only Administrator can reject bed requests.' };
     }
 
-    const targetRequest = bedRequests.find(r => r.id === requestId);
-    if (!targetRequest) {
-      return { success: false, message: 'Bed request not found.' };
+    try {
+      const res = await bedRequestService.rejectBedRequest(requestId);
+      if (res.success) {
+        await fetchBedRequests();
+        if (addNotification) {
+          addNotification(
+            'Bed Request Rejected',
+            res.message || 'Bed request rejected.',
+            'System'
+          );
+        }
+        return { success: true };
+      }
+      return { success: false, message: res.message || 'Failed to reject bed request' };
+    } catch (error) {
+      const errorMsg = error.response?.data?.message || error.message || 'Failed to reject bed request';
+      return { success: false, message: errorMsg };
     }
-
-    if (targetRequest.status !== 'pending') {
-      return { success: false, message: `Request is already ${targetRequest.status}.` };
-    }
-
-    const now = new Date().toISOString();
-
-    // Bed availability remains unchanged
-    setBedRequests(prev =>
-      prev.map(r =>
-        r.id === requestId
-          ? {
-              ...r,
-              status: 'rejected',
-              assignedBedId: null,
-              assignedBedNumber: null,
-              updatedAt: now
-            }
-          : r
-      )
-    );
-
-    if (addNotification) {
-      addNotification(
-        'Bed Request Rejected',
-        `Bed request from ${targetRequest.requesterName} for ${targetRequest.sectionName} was rejected.`,
-        'System'
-      );
-    }
-
-    return { success: true };
   };
 
   return (
@@ -493,13 +272,16 @@ export const RoomProvider = ({ children }) => {
         occupiedBeds,
         availableBeds,
         bedRequests,
+        loading,
+        fetchRooms,
+        fetchBedRequests,
         getRoomBeds,
         getAvailableBeds,
         allocateBed,
         releaseBed,
         createBedRequest,
         acceptBedRequest,
-        rejectBedRequest
+        rejectBedRequest,
       }}
     >
       {children}

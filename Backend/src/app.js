@@ -6,6 +6,11 @@ import patientRoutes from './routes/patientRoutes.js';
 import appointmentRoutes from './routes/appointmentRoutes.js';
 import profileRoutes from './routes/profileRoutes.js';
 import userRoutes from './routes/userRoutes.js';
+import roomRoutes from './routes/roomRoutes.js';
+import bedRoutes from './routes/bedRoutes.js';
+import bedRequestRoutes from './routes/bedRequestRoutes.js';
+import pharmacyRoutes from './routes/pharmacyRoutes.js';
+import prescriptionRoutes from './routes/prescriptionRoutes.js';
 import { notFound, errorHandler } from './middleware/errorMiddleware.js';
 
 const app = express();
@@ -42,6 +47,11 @@ app.use('/api/profile', profileRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/patients', patientRoutes);
 app.use('/api/appointments', appointmentRoutes);
+app.use('/api/rooms', roomRoutes);
+app.use('/api/beds', bedRoutes);
+app.use('/api/bed-requests', bedRequestRoutes);
+app.use('/api/pharmacy', pharmacyRoutes);
+app.use('/api/prescriptions', prescriptionRoutes);
 
 // Error Handling Middleware
 app.use(notFound);

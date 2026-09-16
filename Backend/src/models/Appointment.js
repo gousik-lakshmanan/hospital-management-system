@@ -66,14 +66,21 @@ const appointmentSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['Scheduled', 'Confirmed', 'Completed', 'Cancelled', 'Rescheduled'],
-      default: 'Scheduled',
-      index: true,
+      enum: ['Pending', 'Confirmed', 'Rejected', 'Rescheduled', 'Completed', 'Cancelled'],
+      default: 'Pending',
     },
     notes: {
       type: String,
       default: '',
       trim: true,
+    },
+    requestedAt: {
+      type: Date,
+      default: Date.now,
+    },
+    respondedAt: {
+      type: Date,
+      default: null,
     },
   },
   {
@@ -82,6 +89,11 @@ const appointmentSchema = new mongoose.Schema(
     toObject: { virtuals: true },
   }
 );
+
+// Compound indexes for conflict resolution and scoped queries
+appointmentSchema.index({ providerId: 1, date: 1, time: 1, status: 1 });
+appointmentSchema.index({ patientId: 1, createdAt: -1 });
+appointmentSchema.index({ providerId: 1, status: 1, createdAt: -1 });
 
 // Pre-save hook to generate sequential human-readable ID if missing
 appointmentSchema.pre('save', async function (next) {

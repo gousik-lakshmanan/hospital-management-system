@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { Bed, Plus, Settings, Eye, CheckCircle2, ShieldAlert, Sparkles, Inbox, ClipboardList, Send } from 'lucide-react';
 import { useRooms } from '../../context/RoomContext';
 import { useAuth } from '../../hooks/useAuth';
@@ -40,9 +40,15 @@ export const RoomsPage = () => {
   const pendingRequestsCount = bedRequests.filter((r) => r.status === 'pending').length;
 
   // Filter requests for patient view
-  const myBedRequests = bedRequests.filter(
-    (r) => r.requesterId === user?.id || (user?.email && r.requesterId === user?.email)
-  );
+  const myBedRequests = isPatient
+    ? bedRequests.filter(
+        (r) =>
+          r.requesterId === user?._id ||
+          r.requesterId === user?.id ||
+          (user?.email && r.requesterId === user?.email) ||
+          r.requesterId === user?.profileId
+      )
+    : [];
 
   const handleOpenAllocate = (roomNumber = '') => {
     if (!isAdmin) return;
@@ -218,22 +224,25 @@ export const RoomsPage = () => {
         </div>
       </div>
 
-      {/* Visual Room Sections (Ward A, Emergency, ICU, Private Suite 1, 2, 3) */}
+      {/* Visual Room Sections */}
       <div className="space-y-6">
         {rooms.map((room) => {
           const roomBeds = room.beds || [];
           const occupiedCount = roomBeds.filter(b => (b.status || '').toUpperCase() === 'OCCUPIED').length;
           const availableCount = roomBeds.filter(b => (b.status || '').toUpperCase() === 'AVAILABLE').length;
           const isFull = availableCount === 0;
+          const roomDisplayName = room.type || room.roomName;
+          const roomDisplayId = room.roomNumber || room.roomId;
+          const roomCapacity = room.capacity || room.totalBeds;
 
           return (
             <Card
-              key={room.roomNumber}
+              key={roomDisplayId}
               className="border border-slate-200/90 shadow-xs"
               title={
                 <div className="flex items-center gap-2">
                   <span className="text-base font-bold text-slate-800">
-                    {room.type} ({room.roomNumber})
+                    {roomDisplayName} ({roomDisplayId})
                   </span>
                   {isFull ? (
                     <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-rose-100 text-rose-700 uppercase tracking-wider">
@@ -248,7 +257,7 @@ export const RoomsPage = () => {
               }
               subtitle={
                 <div className="flex items-center gap-2 text-xs text-slate-500 font-medium mt-0.5">
-                  <span>{room.totalBeds} Bed Space{room.totalBeds > 1 ? 's' : ''}</span>
+                  <span>{roomCapacity} Bed Space{roomCapacity > 1 ? 's' : ''}</span>
                   <span>·</span>
                   <span className="text-rose-600 font-semibold">{occupiedCount} Occupied</span>
                   <span>·</span>
@@ -262,7 +271,7 @@ export const RoomsPage = () => {
                       variant="outline"
                       size="sm"
                       icon={Settings}
-                      onClick={() => handleOpenManage(room.roomNumber)}
+                      onClick={() => handleOpenManage(roomDisplayId)}
                     >
                       Manage
                     </Button>
@@ -271,7 +280,7 @@ export const RoomsPage = () => {
                       size="sm"
                       icon={Plus}
                       disabled={isFull}
-                      onClick={() => handleOpenAllocate(room.roomNumber)}
+                      onClick={() => handleOpenAllocate(roomDisplayId)}
                     >
                       Allocate Bed
                     </Button>
@@ -283,10 +292,11 @@ export const RoomsPage = () => {
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
                 {roomBeds.map((bed) => {
                   const isOccupied = (bed.status || '').toUpperCase() === 'OCCUPIED';
+                  const bedIdentifier = bed._id || bed.id;
 
                   return (
                     <div
-                      key={bed.id}
+                      key={bedIdentifier}
                       className={`p-3.5 rounded-xl border flex flex-col items-center justify-center text-center shadow-xs transition-all duration-500 ease-in-out ${
                         isOccupied
                           ? 'bg-rose-50/60 border-rose-200 text-rose-950'
@@ -309,7 +319,7 @@ export const RoomsPage = () => {
 
                       {/* Bed Unique ID */}
                       <span className="text-[9px] font-mono text-slate-400 mt-0.5">
-                        {bed.id}
+                        {bedIdentifier}
                       </span>
 
                       {/* Status Badge */}

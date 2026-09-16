@@ -11,10 +11,10 @@ export const Badge = ({ children, variant = 'info', className = '' }) => {
     if (['OCCUPIED', 'LOW STOCK', 'EXPIRING SOON', 'RESERVED', 'PENDING', 'SCHEDULED', 'OBSERVATION', 'WARNING'].includes(text)) {
       return 'bg-amber-50 text-amber-700 border-amber-200';
     }
-    if (['OUT OF STOCK', 'CRITICAL', 'CANCELLED', 'DANGER', 'EMERGENCY ALERT', 'OFF DUTY', 'MAINTENANCE'].includes(text)) {
+    if (['OUT OF STOCK', 'CRITICAL', 'CANCELLED', 'REJECTED', 'DANGER', 'EMERGENCY ALERT', 'OFF DUTY', 'MAINTENANCE'].includes(text)) {
       return 'bg-rose-50 text-rose-700 border-rose-200';
     }
-    if (['ADMITTED', 'INFO', 'SYSTEM', 'APPOINTMENT', 'VISITOR', 'PHARMACY'].includes(text)) {
+    if (['ADMITTED', 'RESCHEDULED', 'INFO', 'SYSTEM', 'APPOINTMENT', 'VISITOR', 'PHARMACY'].includes(text)) {
       return 'bg-blue-50 text-blue-700 border-blue-200';
     }
     

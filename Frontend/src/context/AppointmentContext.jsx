@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { mockDoctors, mockNurses, DEPARTMENT_DOCTORS, NURSE_SERVICES, mockActivities } from '../data/mockData';
-import { appointmentService } from '../services/api';
+import { mockDoctors, mockNurses, mockActivities } from '../data/mockData';
+import { appointmentService } from '../services/appointmentService';
 import { useAuth } from '../hooks/useAuth';
 import { NotificationContext } from './NotificationContext';
 
@@ -15,15 +15,19 @@ export const AppointmentProvider = ({ children }) => {
   const [loading, setLoading] = useState(false);
   const [providers, setProviders] = useState({ doctors: [], nurses: [] });
 
-  // Fetch providers list from backend
+  // Fetch active providers list from backend
   const fetchProviders = useCallback(async () => {
     try {
       const res = await appointmentService.getProviders();
       if (res?.success) {
-        setProviders({ doctors: res.doctors || [], nurses: res.nurses || [] });
+        setProviders({
+          doctors: res.doctors || [],
+          nurses: res.nurses || [],
+          providers: res.providers || [...(res.doctors || []), ...(res.nurses || [])],
+        });
       }
     } catch (err) {
-      console.warn('Could not fetch dynamic providers, using mock lookup', err.message);
+      console.warn('Could not fetch providers from backend:', err.message);
     }
   }, []);
 
@@ -58,8 +62,10 @@ export const AppointmentProvider = ({ children }) => {
   }, [isAuthenticated, user]);
 
   useEffect(() => {
-    fetchProviders();
-  }, [fetchProviders]);
+    if (isAuthenticated) {
+      fetchProviders();
+    }
+  }, [isAuthenticated, fetchProviders]);
 
   useEffect(() => {
     fetchAppointments();
@@ -73,10 +79,10 @@ export const AppointmentProvider = ({ children }) => {
     return !appointments.some(
       (a) =>
         (a._id !== currentApptId && a.id !== currentApptId) &&
-        (a.providerId === providerId || a.providerId?.toString() === providerId?.toString()) &&
+        (a.providerId === providerId || a.providerId?._id === providerId || a.providerId?.toString() === providerId?.toString()) &&
         a.date === date &&
         a.time === time &&
-        a.status !== 'Cancelled'
+        ['Pending', 'Confirmed', 'Rescheduled'].includes(a.status)
     );
   };
 
@@ -84,17 +90,7 @@ export const AppointmentProvider = ({ children }) => {
    * Get available slots for a provider on a specific date
    */
   const getAvailableSlots = (providerId, date) => {
-    let allSlots = ['09:00 AM', '10:00 AM', '11:30 AM', '02:00 PM', '04:00 PM'];
-    const doc = mockDoctors.find((d) => d.id === providerId || d._id === providerId);
-    if (doc?.availableSlots) {
-      allSlots = doc.availableSlots;
-    } else {
-      const nurse = mockNurses.find((n) => n.id === providerId || n._id === providerId);
-      if (nurse?.availableSlots) {
-        allSlots = nurse.availableSlots;
-      }
-    }
-
+    const allSlots = ['09:00 AM', '10:00 AM', '11:30 AM', '02:00 PM', '04:00 PM'];
     if (!date) return allSlots;
 
     return allSlots.map((slot) => ({
@@ -109,7 +105,6 @@ export const AppointmentProvider = ({ children }) => {
   const bookAppointment = async ({
     type = 'doctor',
     providerId,
-    department,
     service,
     reason = 'Consultation',
     date,
@@ -120,7 +115,6 @@ export const AppointmentProvider = ({ children }) => {
       const payload = {
         type,
         providerId,
-        department,
         service,
         reason,
         date,
@@ -137,7 +131,7 @@ export const AppointmentProvider = ({ children }) => {
         // Log system activity
         mockActivities.unshift({
           id: Date.now(),
-          text: `Appointment ${newAppointment.id} booked with ${newAppointment.providerName}`,
+          text: `Appointment request ${newAppointment.id} sent to ${newAppointment.providerName}`,
           time: 'Just now',
           type: 'success',
         });
@@ -145,8 +139,8 @@ export const AppointmentProvider = ({ children }) => {
         // Notify User
         if (addNotification) {
           addNotification(
-            `Appointment Booked (${newAppointment.id})`,
-            `Appointment with ${newAppointment.providerName} scheduled for ${date} at ${time}.`,
+            `Appointment Request Sent (${newAppointment.id})`,
+            `Request sent to ${newAppointment.providerName} for ${date} at ${time}. Pending confirmation.`,
             'Appointment'
           );
         }
@@ -162,7 +156,7 @@ export const AppointmentProvider = ({ children }) => {
   };
 
   /**
-   * Update Status of an Appointment (Persisted to MongoDB Atlas)
+   * Update Status of an Appointment (Accept, Reject, Conclude, or Patient Cancel)
    */
   const updateAppointmentStatus = async (id, newStatus, reasonOrNotes = '') => {
     try {
@@ -182,9 +176,41 @@ export const AppointmentProvider = ({ children }) => {
         }
 
         return updated;
+      } else {
+        throw new Error(res?.message || 'Failed to update appointment status');
       }
     } catch (error) {
       console.error('Update status error:', error.message);
+      throw error;
+    }
+  };
+
+  /**
+   * Reschedule an Appointment
+   */
+  const rescheduleAppointment = async (id, newDate, newTime, notes = '') => {
+    try {
+      const res = await appointmentService.reschedule(id, newDate, newTime, notes);
+      if (res?.success && res.appointment) {
+        const updated = res.appointment;
+        setAppointments((prev) =>
+          prev.map((app) => (app._id === updated._id || app.id === id ? updated : app))
+        );
+
+        if (addNotification) {
+          addNotification(
+            `Appointment Rescheduled`,
+            `Appointment ${id} rescheduled to ${newDate} at ${newTime}.`,
+            'Appointment'
+          );
+        }
+
+        return updated;
+      } else {
+        throw new Error(res?.message || 'Failed to reschedule appointment');
+      }
+    } catch (error) {
+      console.error('Reschedule error:', error.message);
       throw error;
     }
   };
@@ -219,6 +245,7 @@ export const AppointmentProvider = ({ children }) => {
         providers,
         bookAppointment,
         updateAppointmentStatus,
+        rescheduleAppointment,
         cancelAppointment,
         isSlotAvailable,
         getAvailableSlots,
@@ -226,6 +253,7 @@ export const AppointmentProvider = ({ children }) => {
         getDoctorAppointments,
         getNurseAppointments,
         refreshAppointments: fetchAppointments,
+        refreshProviders: fetchProviders,
       }}
     >
       {children}
@@ -240,3 +268,4 @@ export const useAppointments = () => {
   }
   return context;
 };
+

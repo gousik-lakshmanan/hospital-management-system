@@ -25,7 +25,7 @@ import BookAppointmentModal from './BookAppointmentModal';
 
 export const AppointmentsPage = () => {
   const { user, currentRole } = useAuth();
-  const { appointments, updateAppointmentStatus, isSlotAvailable } = useAppointments();
+  const { appointments, updateAppointmentStatus, rescheduleAppointment, cancelAppointment, isSlotAvailable } = useAppointments();
 
   // Filter Tab State
   const [activeTab, setActiveTab] = useState('ALL'); // 'ALL' | 'TODAY' | 'UPCOMING' | 'COMPLETED' | 'CANCELLED'
@@ -35,6 +35,7 @@ export const AppointmentsPage = () => {
   const [rescheduleAppt, setRescheduleAppt] = useState(null);
   const [newDate, setNewDate] = useState('');
   const [newTime, setNewTime] = useState('');
+  const [rescheduleNotes, setRescheduleNotes] = useState('');
   const [rescheduleError, setRescheduleError] = useState('');
 
   const todayStr = new Date().toISOString().split('T')[0];
@@ -46,9 +47,9 @@ export const AppointmentsPage = () => {
   const getFilteredData = () => {
     return scopedAppointments.filter((a) => {
       if (activeTab === 'TODAY') return a.date === todayStr;
-      if (activeTab === 'UPCOMING') return a.date >= todayStr && a.status !== 'Completed' && a.status !== 'Cancelled';
+      if (activeTab === 'UPCOMING') return a.date >= todayStr && a.status !== 'Completed' && a.status !== 'Cancelled' && a.status !== 'Rejected';
       if (activeTab === 'COMPLETED') return a.status === 'Completed';
-      if (activeTab === 'CANCELLED') return a.status === 'Cancelled';
+      if (activeTab === 'CANCELLED') return a.status === 'Cancelled' || a.status === 'Rejected';
       return true;
     });
   };
@@ -62,10 +63,11 @@ export const AppointmentsPage = () => {
     setRescheduleAppt(appt);
     setNewDate(appt.date);
     setNewTime(appt.time);
+    setRescheduleNotes('');
     setRescheduleError('');
   };
 
-  const handleSaveReschedule = (e) => {
+  const handleSaveReschedule = async (e) => {
     e.preventDefault();
     setRescheduleError('');
 
@@ -74,21 +76,13 @@ export const AppointmentsPage = () => {
       return;
     }
 
-    if (!isSlotAvailable(rescheduleAppt.providerId, newDate, newTime, rescheduleAppt.id)) {
-      setRescheduleError('Selected slot is no longer available. Please choose another time.');
-      return;
+    try {
+      const apptId = rescheduleAppt._id || rescheduleAppt.id;
+      await rescheduleAppointment(apptId, newDate, newTime, rescheduleNotes);
+      setRescheduleAppt(null);
+    } catch (err) {
+      setRescheduleError(err.response?.data?.message || err.message || 'Failed to reschedule.');
     }
-
-    // Update appointment date & time
-    rescheduleAppt.date = newDate;
-    rescheduleAppt.time = newTime;
-    updateAppointmentStatus(
-      rescheduleAppt.id,
-      'Rescheduled',
-      `Rescheduled to ${newDate} at ${newTime}`
-    );
-
-    setRescheduleAppt(null);
   };
 
   const columns = [
@@ -160,83 +154,112 @@ export const AppointmentsPage = () => {
     },
     {
       header: 'Actions',
-      cell: (row) => (
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {/* Scheduled Status Actions */}
-          {row.status === 'Scheduled' && (
-            <>
-              <Button
-                variant="white"
-                size="sm"
-                className="text-emerald-600 hover:bg-emerald-50 border-emerald-200 text-xs px-2.5"
-                onClick={() => handleUpdateStatus(row.id, 'Confirmed')}
-              >
-                Confirm
-              </Button>
-              <Button
-                variant="white"
-                size="sm"
-                className="text-amber-600 hover:bg-amber-50 border-amber-200 text-xs px-2"
-                onClick={() => handleOpenReschedule(row)}
-              >
-                Reschedule
-              </Button>
-              <Button
-                variant="white"
-                size="sm"
-                className="text-rose-600 hover:bg-rose-50 border-rose-200 text-xs px-2"
-                onClick={() => handleUpdateStatus(row.id, 'Cancelled', 'Cancelled by provider')}
-              >
-                Cancel
-              </Button>
-            </>
-          )}
+      cell: (row) => {
+        const apptId = row._id || row.id;
+        const isProviderOrAdmin = ['doctor', 'nurse', 'admin'].includes(currentRole);
 
-          {/* Confirmed / Rescheduled Status Actions */}
-          {(row.status === 'Confirmed' || row.status === 'Rescheduled') && (
-            <>
-              <Button
-                variant="primary"
-                size="sm"
-                className="text-xs px-3"
-                onClick={() => handleUpdateStatus(row.id, 'Completed')}
-              >
-                Conclude
-              </Button>
-              <Button
-                variant="white"
-                size="sm"
-                className="text-amber-600 hover:bg-amber-50 border-amber-200 text-xs px-2"
-                onClick={() => handleOpenReschedule(row)}
-              >
-                Reschedule
-              </Button>
-              <Button
-                variant="white"
-                size="sm"
-                className="text-rose-600 hover:bg-rose-50 border-rose-200 text-xs px-2"
-                onClick={() => handleUpdateStatus(row.id, 'Cancelled', 'Cancelled by provider')}
-              >
-                Cancel
-              </Button>
-            </>
-          )}
+        return (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {/* Pending Status Actions */}
+            {row.status === 'Pending' && (
+              <>
+                {isProviderOrAdmin ? (
+                  <>
+                    <Button
+                      variant="white"
+                      size="sm"
+                      className="text-emerald-600 hover:bg-emerald-50 border-emerald-200 text-xs px-2.5"
+                      onClick={() => handleUpdateStatus(apptId, 'Confirmed')}
+                    >
+                      Accept
+                    </Button>
+                    <Button
+                      variant="white"
+                      size="sm"
+                      className="text-amber-600 hover:bg-amber-50 border-amber-200 text-xs px-2"
+                      onClick={() => handleOpenReschedule(row)}
+                    >
+                      Reschedule
+                    </Button>
+                    <Button
+                      variant="white"
+                      size="sm"
+                      className="text-rose-600 hover:bg-rose-50 border-rose-200 text-xs px-2"
+                      onClick={() => handleUpdateStatus(apptId, 'Rejected', 'Declined by provider')}
+                    >
+                      Reject
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    variant="white"
+                    size="sm"
+                    className="text-rose-600 hover:bg-rose-50 border-rose-200 text-xs px-2"
+                    onClick={() => handleUpdateStatus(apptId, 'Cancelled', 'Cancelled by patient')}
+                  >
+                    Cancel Request
+                  </Button>
+                )}
+              </>
+            )}
 
-          {/* Completed Badge */}
-          {row.status === 'Completed' && (
-            <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-100 flex items-center gap-1">
-              <Check className="w-3.5 h-3.5" /> Completed
-            </span>
-          )}
+            {/* Confirmed / Rescheduled Status Actions */}
+            {(row.status === 'Confirmed' || row.status === 'Rescheduled' || row.status === 'Scheduled') && (
+              <>
+                {isProviderOrAdmin && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    className="text-xs px-3"
+                    onClick={() => handleUpdateStatus(apptId, 'Completed')}
+                  >
+                    Conclude
+                  </Button>
+                )}
+                {isProviderOrAdmin && (
+                  <Button
+                    variant="white"
+                    size="sm"
+                    className="text-amber-600 hover:bg-amber-50 border-amber-200 text-xs px-2"
+                    onClick={() => handleOpenReschedule(row)}
+                  >
+                    Reschedule
+                  </Button>
+                )}
+                <Button
+                  variant="white"
+                  size="sm"
+                  className="text-rose-600 hover:bg-rose-50 border-rose-200 text-xs px-2"
+                  onClick={() => handleUpdateStatus(apptId, 'Cancelled', isProviderOrAdmin ? 'Cancelled by provider' : 'Cancelled by patient')}
+                >
+                  Cancel
+                </Button>
+              </>
+            )}
 
-          {/* Cancelled Badge */}
-          {row.status === 'Cancelled' && (
-            <span className="text-[11px] font-semibold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-100 flex items-center gap-1">
-              <XCircle className="w-3.5 h-3.5" /> Cancelled
-            </span>
-          )}
-        </div>
-      )
+            {/* Rejected Badge */}
+            {row.status === 'Rejected' && (
+              <span className="text-[11px] font-semibold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-100 flex items-center gap-1">
+                <XCircle className="w-3.5 h-3.5" /> Rejected
+              </span>
+            )}
+
+            {/* Completed Badge */}
+            {row.status === 'Completed' && (
+              <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-100 flex items-center gap-1">
+                <Check className="w-3.5 h-3.5" /> Completed
+              </span>
+            )}
+
+            {/* Cancelled Badge */}
+            {row.status === 'Cancelled' && (
+              <span className="text-[11px] font-semibold text-slate-500 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200 flex items-center gap-1">
+                <XCircle className="w-3.5 h-3.5" /> Cancelled
+              </span>
+            )}
+          </div>
+        );
+      }
     }
   ];
 

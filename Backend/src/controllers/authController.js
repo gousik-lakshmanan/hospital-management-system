@@ -24,6 +24,13 @@ export const register = async (req, res, next) => {
     }
 
     // STRICT SECURITY RULE: Public registration ONLY creates patient accounts
+    if (req.body.role && req.body.role.toLowerCase() !== 'patient') {
+      return res.status(403).json({
+        success: false,
+        message: 'Public registration is restricted to patients only. Healthcare practitioner accounts must be provisioned by an Administrator.',
+      });
+    }
+
     const assignedRole = 'patient';
     const normalizedEmail = email.toLowerCase().trim();
 

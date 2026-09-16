@@ -1,37 +1,50 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { Bed, CheckCircle2, AlertTriangle, ShieldCheck } from 'lucide-react';
 import Modal from '../common/Modal';
 import Button from '../common/Button';
 import { useRooms } from '../../context/RoomContext';
+import { roomService } from '../../services/roomService';
 
 export const AcceptBedRequestModal = ({ isOpen, onClose, request, onSuccess }) => {
-  const { getAvailableBeds, acceptBedRequest } = useRooms();
+  const { acceptBedRequest, getAvailableBeds } = useRooms();
 
+  const [availableBeds, setAvailableBeds] = useState([]);
   const [selectedBedId, setSelectedBedId] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
 
-  const availableBeds = request ? getAvailableBeds(request.sectionId) : [];
-
   useEffect(() => {
-    if (isOpen && request) {
-      const beds = getAvailableBeds(request.sectionId);
-      setSelectedBedId(beds.length > 0 ? beds[0].id : '');
-      setIsProcessing(false);
-      setErrorMessage(null);
-    }
-  }, [isOpen, request]);
+    const fetchBeds = async () => {
+      if (isOpen && request && request.sectionId) {
+        setIsProcessing(false);
+        setErrorMessage(null);
+        try {
+          const res = await roomService.getAvailableBeds(request.sectionId);
+          const beds = (res.data || []).map(b => ({ ...b, id: b._id || b.bedNumber }));
+          setAvailableBeds(beds);
+          setSelectedBedId(beds.length > 0 ? (beds[0]._id || beds[0].id) : '');
+        } catch (err) {
+          const fallback = getAvailableBeds(request.sectionId);
+          setAvailableBeds(fallback);
+          setSelectedBedId(fallback.length > 0 ? (fallback[0]._id || fallback[0].id) : '');
+        }
+      }
+    };
+
+    fetchBeds();
+  }, [isOpen, request, getAvailableBeds]);
 
   if (!request) return null;
 
-  const handleAcceptConfirm = (e) => {
-    e.preventDefault();
+  const handleAcceptConfirm = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
     if (!selectedBedId || isProcessing) return;
 
     setIsProcessing(true);
     setErrorMessage(null);
 
-    const result = acceptBedRequest(request.id, selectedBedId);
+    const requestId = request.id || request._id;
+    const result = await acceptBedRequest(requestId, selectedBedId);
 
     if (result.success) {
       setIsProcessing(false);
@@ -42,10 +55,16 @@ export const AcceptBedRequestModal = ({ isOpen, onClose, request, onSuccess }) =
     } else {
       setIsProcessing(false);
       setErrorMessage(result.message);
-      // Re-check available beds
-      const freshBeds = getAvailableBeds(request.sectionId);
-      if (!freshBeds.some((b) => b.id === selectedBedId)) {
-        setSelectedBedId(freshBeds.length > 0 ? freshBeds[0].id : '');
+      // Re-fetch fresh available beds
+      try {
+        const res = await roomService.getAvailableBeds(request.sectionId);
+        const beds = (res.data || []).map(b => ({ ...b, id: b._id || b.bedNumber }));
+        setAvailableBeds(beds);
+        if (!beds.some((b) => (b._id || b.id) === selectedBedId)) {
+          setSelectedBedId(beds.length > 0 ? (beds[0]._id || beds[0].id) : '');
+        }
+      } catch (e) {
+        // ignore
       }
     }
   };
@@ -145,13 +164,14 @@ export const AcceptBedRequestModal = ({ isOpen, onClose, request, onSuccess }) =
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-48 overflow-y-auto p-1">
               {availableBeds.map((bed) => {
-                const isSelected = selectedBedId === bed.id;
+                const bedIdentifier = bed._id || bed.id;
+                const isSelected = selectedBedId === bedIdentifier;
                 return (
                   <button
-                    key={bed.id}
+                    key={bedIdentifier}
                     type="button"
                     onClick={() => {
-                      setSelectedBedId(bed.id);
+                      setSelectedBedId(bedIdentifier);
                       setErrorMessage(null);
                     }}
                     className={`p-3 rounded-xl border text-left transition-all duration-150 flex flex-col justify-between cursor-pointer ${
@@ -165,7 +185,7 @@ export const AcceptBedRequestModal = ({ isOpen, onClose, request, onSuccess }) =
                       <Bed className={`w-4 h-4 ${isSelected ? 'text-emerald-600' : 'text-slate-400'}`} />
                     </div>
                     <span className="text-[10px] font-mono text-slate-400 mt-1 block">
-                      {bed.id}
+                      {bedIdentifier}
                     </span>
                   </button>
                 );
