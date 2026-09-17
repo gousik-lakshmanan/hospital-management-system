@@ -1,349 +1,251 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { mockBloodStock, mockBloodDonors } from '../data/mockData';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { NotificationContext } from './NotificationContext';
+import bloodBankService from '../services/bloodBankService';
 
 export const BloodBankContext = createContext();
 
-const calculateStatus = (bags) => {
-  if (bags <= 2) return 'Emergency Alert';
-  if (bags <= 5) return 'Low Stock';
-  return 'Normal';
-};
-
 export const BloodBankProvider = ({ children }) => {
-  const { currentRole, user } = useAuth();
+  const { currentRole, user, isAuthenticated } = useAuth();
+  const notifCtx = useContext(NotificationContext);
+  const addNotification = notifCtx?.addNotification || (() => {});
 
-  const [stock, setStock] = useState(() => {
-    try {
-      const saved = localStorage.getItem('medisync_blood_stock');
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (e) {
-      console.error('Failed to load blood stock from localStorage', e);
-    }
-    return mockBloodStock;
-  });
+  const [stock, setStock] = useState([]);
+  const [donors, setDonors] = useState([]);
+  const [bloodRequests, setBloodRequests] = useState([]);
+  const [myBloodRequests, setMyBloodRequests] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  const [donors, setDonors] = useState(() => {
-    try {
-      const saved = localStorage.getItem('medisync_blood_donors');
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (e) {
-      console.error('Failed to load blood donors from localStorage', e);
-    }
-    return mockBloodDonors;
-  });
-
-  const [bloodRequests, setBloodRequests] = useState(() => {
-    try {
-      const saved = localStorage.getItem('medisync_blood_requests');
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (e) {
-      console.error('Failed to load blood requests from localStorage', e);
-    }
-    return [];
-  });
-
+  // Clean up any legacy localStorage keys if present
   useEffect(() => {
     try {
-      localStorage.setItem('medisync_blood_stock', JSON.stringify(stock));
+      localStorage.removeItem('medisync_blood_stock');
+      localStorage.removeItem('medisync_blood_donors');
+      localStorage.removeItem('medisync_blood_requests');
     } catch (e) {
-      console.error('Failed to save blood stock to localStorage', e);
+      // Ignore
     }
-  }, [stock]);
+  }, []);
 
-  useEffect(() => {
+  // Fetch Blood Stock (All authenticated roles)
+  const refreshStock = useCallback(async () => {
+    if (!isAuthenticated) return;
     try {
-      localStorage.setItem('medisync_blood_donors', JSON.stringify(donors));
-    } catch (e) {
-      console.error('Failed to save blood donors to localStorage', e);
+      const res = await bloodBankService.getBloodStock();
+      if (res.success && Array.isArray(res.data)) {
+        setStock(res.data);
+      }
+    } catch (err) {
+      console.warn('Failed to load blood stock:', err.response?.data?.message || err.message);
+      setError(err.response?.data?.message || 'Failed to load blood stock.');
     }
-  }, [donors]);
+  }, [isAuthenticated]);
 
-  useEffect(() => {
+  // Fetch Donors (Admin, Doctor, Nurse, Receptionist only; Patient and Pharmacist blocked)
+  const refreshDonors = useCallback(async () => {
+    if (!isAuthenticated || currentRole === 'patient' || currentRole === 'pharmacist') {
+      setDonors([]);
+      return;
+    }
     try {
-      localStorage.setItem('medisync_blood_requests', JSON.stringify(bloodRequests));
-    } catch (e) {
-      console.error('Failed to save blood requests to localStorage', e);
+      const res = await bloodBankService.getDonors();
+      if (res.success && Array.isArray(res.data)) {
+        setDonors(res.data);
+      }
+    } catch (err) {
+      console.warn('Failed to load donors list:', err.response?.data?.message || err.message);
     }
-  }, [bloodRequests]);
+  }, [isAuthenticated, currentRole]);
 
-  // Admin updates bag count for a blood group (Frontend Action-Level Guard)
-  const updateBagCount = (group, newCount) => {
-    if (currentRole !== 'admin') {
-      console.warn('Frontend action-level authorization error: Only administrators can modify blood stock counts.');
-      return false;
-    }
-
-    const validCount = Math.max(0, parseInt(newCount, 10) || 0);
-    setStock((prevStock) =>
-      prevStock.map((item) => {
-        if (item.group === group) {
-          return {
-            ...item,
-            bags: validCount,
-            status: calculateStatus(validCount)
-          };
+  // Fetch Requests (Admin loads all requests; Non-admin loads my requests)
+  const refreshRequests = useCallback(async () => {
+    if (!isAuthenticated) return;
+    try {
+      if (currentRole === 'admin') {
+        const res = await bloodBankService.getAllBloodRequests();
+        if (res.success && Array.isArray(res.data)) {
+          setBloodRequests(res.data);
         }
-        return item;
-      })
-    );
-    return true;
+      } else {
+        const res = await bloodBankService.getMyBloodRequests();
+        if (res.success && Array.isArray(res.data)) {
+          setMyBloodRequests(res.data);
+          setBloodRequests(res.data); // Shared alias for uniform table access
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to load blood requests:', err.response?.data?.message || err.message);
+    }
+  }, [isAuthenticated, currentRole]);
+
+  // Load initial data on mount and role/auth changes
+  useEffect(() => {
+    if (isAuthenticated) {
+      setLoading(true);
+      Promise.all([refreshStock(), refreshDonors(), refreshRequests()]).finally(() => {
+        setLoading(false);
+      });
+    }
+  }, [isAuthenticated, currentRole, refreshStock, refreshDonors, refreshRequests]);
+
+  // Admin updates bag count for a blood group
+  const updateBagCount = async (group, newCount) => {
+    if (currentRole !== 'admin') {
+      console.warn('Action-level authorization error: Only administrators can modify blood stock counts.');
+      return { success: false, error: 'Unauthorized' };
+    }
+
+    try {
+      const validCount = Math.max(0, parseInt(newCount, 10) || 0);
+      const res = await bloodBankService.updateBloodStock(group, { units: validCount });
+      if (res.success) {
+        await refreshStock();
+        addNotification(
+          'Blood Stock Updated',
+          `Inventory for blood group ${group} adjusted to ${validCount} bags.`,
+          'System'
+        );
+        return { success: true, data: res.data };
+      }
+      return { success: false, error: res.message };
+    } catch (err) {
+      const errMsg = err.response?.data?.message || err.message || 'Failed to update stock count.';
+      return { success: false, error: errMsg };
+    }
   };
 
-  // Register a new donor (Frontend Action-Level Guard)
-  const addDonor = (donorData) => {
+  // Admin registers a new donor
+  const addDonor = async (donorData) => {
     if (currentRole !== 'admin') {
-      console.warn('Frontend action-level authorization error: Only administrators can register blood donors.');
-      return null;
+      console.warn('Action-level authorization error: Only administrators can register blood donors.');
+      return { success: false, error: 'Unauthorized' };
     }
 
-    const newId = `BD-${String(donors.length + 1).padStart(2, '0')}`;
-    const today = new Date().toISOString().split('T')[0];
-    const newDonor = {
-      id: newId,
-      name: donorData.name,
-      bloodGroup: donorData.bloodGroup,
-      phone: donorData.phone,
-      lastDonated: today
-    };
+    try {
+      const res = await bloodBankService.registerDonor({
+        name: donorData.name,
+        age: donorData.age || 25,
+        gender: donorData.gender || 'Other',
+        bloodGroup: donorData.bloodGroup,
+        phone: donorData.phone,
+        email: donorData.email || '',
+        address: donorData.address || '',
+        lastDonationDate: donorData.lastDonated || new Date(),
+      });
 
-    setDonors((prev) => [newDonor, ...prev]);
-
-    // Also increment corresponding stock count
-    setStock((prevStock) =>
-      prevStock.map((item) => {
-        if (item.group === donorData.bloodGroup) {
-          const newBags = item.bags + 1;
-          return {
-            ...item,
-            bags: newBags,
-            status: calculateStatus(newBags)
-          };
-        }
-        return item;
-      })
-    );
-
-    return newDonor;
+      if (res.success) {
+        await Promise.all([refreshDonors(), refreshStock()]);
+        addNotification(
+          'Blood Donor Registered',
+          `Donor ${donorData.name} (${donorData.bloodGroup}) registered into hospital log.`,
+          'Success'
+        );
+        return { success: true, data: res.data };
+      }
+      return { success: false, error: res.message };
+    } catch (err) {
+      const errMsg = err.response?.data?.message || err.message || 'Failed to register blood donor.';
+      return { success: false, error: errMsg };
+    }
   };
 
   // Requester (Doctor, Nurse, Receptionist, Patient) creates a blood request
-  const createBloodRequest = (bloodGroup, requestedUnits) => {
+  const createBloodRequest = async (bloodGroup, requestedUnits) => {
     if (currentRole === 'admin') {
       console.warn('Action not applicable for administrators.');
       return { success: false, error: 'Administrators manage requests rather than creating them.' };
     }
 
-    const parsedUnits = parseInt(requestedUnits, 10);
-    if (!parsedUnits || parsedUnits < 1) {
-      return { success: false, error: 'Requested units must be at least 1.' };
+    try {
+      const res = await bloodBankService.createBloodRequest(bloodGroup, requestedUnits);
+      if (res.success) {
+        await Promise.all([refreshRequests(), refreshStock()]);
+        addNotification(
+          'Blood Request Submitted',
+          `Your request for ${requestedUnits} units of ${bloodGroup} was dispatched for administrator review.`,
+          'Info'
+        );
+        return { success: true, request: res.data };
+      }
+      return { success: false, error: res.message };
+    } catch (err) {
+      const errMsg = err.response?.data?.message || err.message || 'Failed to create blood request.';
+      const currentAvailable = err.response?.data?.availableUnits;
+      return { success: false, error: errMsg, currentAvailable };
     }
-
-    // Live stock verification at submission time
-    const targetGroupStock = stock.find((s) => s.group === bloodGroup);
-    const availableUnits = targetGroupStock ? targetGroupStock.bags : 0;
-
-    if (availableUnits <= 0) {
-      return {
-        success: false,
-        error: `Currently unavailable. No units are available for blood group ${bloodGroup}.`,
-        currentAvailable: 0
-      };
-    }
-
-    if (parsedUnits > availableUnits) {
-      return {
-        success: false,
-        error: `Blood stock has changed. Only ${availableUnits} units of ${bloodGroup} are currently available.`,
-        currentAvailable: availableUnits
-      };
-    }
-
-    const now = new Date().toISOString();
-    const newRequest = {
-      id: `REQ-${Date.now()}`,
-      requesterId: user?.id || `USER-${Date.now()}`,
-      requesterName: user?.name || 'Staff User',
-      requesterRole: user?.role || currentRole,
-      bloodGroup,
-      requestedUnits: parsedUnits,
-      approvedUnits: 0,
-      status: 'pending',
-      createdAt: now,
-      updatedAt: now
-    };
-
-    // Stock is NOT deducted upon request creation
-    setBloodRequests((prev) => [newRequest, ...prev]);
-    return { success: true, request: newRequest };
   };
 
   // Admin approves a pending blood request
-  const approveBloodRequest = (requestId) => {
+  const approveBloodRequest = async (requestId) => {
     if (currentRole !== 'admin') {
-      console.warn('Frontend action-level authorization error: Only administrators can approve blood requests.');
       return { success: false, error: 'Unauthorized: Only administrators can approve blood requests.' };
     }
 
-    const targetRequest = bloodRequests.find((r) => r.id === requestId);
-    if (!targetRequest) {
-      return { success: false, error: 'Blood request not found.' };
+    try {
+      const res = await bloodBankService.approveBloodRequest(requestId);
+      if (res.success) {
+        await Promise.all([refreshRequests(), refreshStock()]);
+        addNotification(
+          'Blood Request Approved',
+          res.message || 'Blood request approved successfully.',
+          'Success'
+        );
+        return { success: true, data: res.data };
+      }
+      return { success: false, error: res.message };
+    } catch (err) {
+      const errMsg = err.response?.data?.message || err.message || 'Failed to approve blood request.';
+      return { success: false, error: errMsg };
     }
-
-    if (targetRequest.status !== 'pending') {
-      return { success: false, error: `Request cannot be approved because its current status is '${targetRequest.status}'.` };
-    }
-
-    // Re-check live stock before modifying
-    const targetGroupStock = stock.find((s) => s.group === targetRequest.bloodGroup);
-    const availableUnits = targetGroupStock ? targetGroupStock.bags : 0;
-
-    if (availableUnits < targetRequest.requestedUnits) {
-      return {
-        success: false,
-        error: `Insufficient blood stock. Only ${availableUnits} units of ${targetRequest.bloodGroup} are currently available.`,
-        currentAvailable: availableUnits
-      };
-    }
-
-    // Deduct stock strictly
-    const newStockCount = availableUnits - targetRequest.requestedUnits;
-    setStock((prevStock) =>
-      prevStock.map((item) => {
-        if (item.group === targetRequest.bloodGroup) {
-          return {
-            ...item,
-            bags: newStockCount,
-            status: calculateStatus(newStockCount)
-          };
-        }
-        return item;
-      })
-    );
-
-    const now = new Date().toISOString();
-    setBloodRequests((prev) =>
-      prev.map((r) =>
-        r.id === requestId
-          ? {
-              ...r,
-              status: 'approved',
-              approvedUnits: targetRequest.requestedUnits,
-              updatedAt: now
-            }
-          : r
-      )
-    );
-
-    return { success: true };
   };
 
   // Admin negotiates a pending blood request with custom approved quantity
-  const negotiateBloodRequest = (requestId, approvedUnits) => {
+  const negotiateBloodRequest = async (requestId, approvedUnits) => {
     if (currentRole !== 'admin') {
-      console.warn('Frontend action-level authorization error: Only administrators can negotiate blood requests.');
       return { success: false, error: 'Unauthorized: Only administrators can negotiate blood requests.' };
     }
 
-    const targetRequest = bloodRequests.find((r) => r.id === requestId);
-    if (!targetRequest) {
-      return { success: false, error: 'Blood request not found.' };
+    try {
+      const res = await bloodBankService.negotiateBloodRequest(requestId, approvedUnits);
+      if (res.success) {
+        await Promise.all([refreshRequests(), refreshStock()]);
+        addNotification(
+          'Blood Request Negotiated',
+          res.message || `Blood request negotiated: ${approvedUnits} units approved.`,
+          'Info'
+        );
+        return { success: true, data: res.data };
+      }
+      return { success: false, error: res.message };
+    } catch (err) {
+      const errMsg = err.response?.data?.message || err.message || 'Failed to negotiate blood request.';
+      return { success: false, error: errMsg };
     }
-
-    if (targetRequest.status !== 'pending') {
-      return { success: false, error: `Request cannot be negotiated because its current status is '${targetRequest.status}'.` };
-    }
-
-    const parsedApproved = parseInt(approvedUnits, 10);
-    const targetGroupStock = stock.find((s) => s.group === targetRequest.bloodGroup);
-    const availableUnits = targetGroupStock ? targetGroupStock.bags : 0;
-
-    if (availableUnits <= 0) {
-      return {
-        success: false,
-        error: `No units of ${targetRequest.bloodGroup} are currently available to negotiate.`,
-        currentAvailable: 0
-      };
-    }
-
-    const maxAllowed = Math.min(targetRequest.requestedUnits, availableUnits);
-    if (!parsedApproved || parsedApproved < 1 || parsedApproved > maxAllowed) {
-      return {
-        success: false,
-        error: `Approved quantity must be between 1 and ${maxAllowed}.`,
-        currentAvailable: availableUnits
-      };
-    }
-
-    // Deduct negotiated quantity from stock
-    const newStockCount = availableUnits - parsedApproved;
-    setStock((prevStock) =>
-      prevStock.map((item) => {
-        if (item.group === targetRequest.bloodGroup) {
-          return {
-            ...item,
-            bags: newStockCount,
-            status: calculateStatus(newStockCount)
-          };
-        }
-        return item;
-      })
-    );
-
-    const now = new Date().toISOString();
-    setBloodRequests((prev) =>
-      prev.map((r) =>
-        r.id === requestId
-          ? {
-              ...r,
-              status: 'negotiated',
-              approvedUnits: parsedApproved,
-              updatedAt: now
-            }
-          : r
-      )
-    );
-
-    return { success: true };
   };
 
   // Admin rejects a pending blood request
-  const rejectBloodRequest = (requestId) => {
+  const rejectBloodRequest = async (requestId) => {
     if (currentRole !== 'admin') {
-      console.warn('Frontend action-level authorization error: Only administrators can reject blood requests.');
       return { success: false, error: 'Unauthorized: Only administrators can reject blood requests.' };
     }
 
-    const targetRequest = bloodRequests.find((r) => r.id === requestId);
-    if (!targetRequest) {
-      return { success: false, error: 'Blood request not found.' };
+    try {
+      const res = await bloodBankService.rejectBloodRequest(requestId);
+      if (res.success) {
+        await refreshRequests();
+        addNotification(
+          'Blood Request Rejected',
+          res.message || 'Blood request rejected.',
+          'Warning'
+        );
+        return { success: true, data: res.data };
+      }
+      return { success: false, error: res.message };
+    } catch (err) {
+      const errMsg = err.response?.data?.message || err.message || 'Failed to reject blood request.';
+      return { success: false, error: errMsg };
     }
-
-    if (targetRequest.status !== 'pending') {
-      return { success: false, error: `Request cannot be rejected because its current status is '${targetRequest.status}'.` };
-    }
-
-    const now = new Date().toISOString();
-    setBloodRequests((prev) =>
-      prev.map((r) =>
-        r.id === requestId
-          ? {
-              ...r,
-              status: 'rejected',
-              approvedUnits: 0,
-              updatedAt: now
-            }
-          : r
-      )
-    );
-
-    return { success: true };
   };
 
   return (
@@ -352,12 +254,18 @@ export const BloodBankProvider = ({ children }) => {
         stock,
         donors,
         bloodRequests,
+        myBloodRequests,
+        loading,
+        error,
+        refreshStock,
+        refreshDonors,
+        refreshRequests,
         updateBagCount,
         addDonor,
         createBloodRequest,
         approveBloodRequest,
         negotiateBloodRequest,
-        rejectBloodRequest
+        rejectBloodRequest,
       }}
     >
       {children}
@@ -372,3 +280,5 @@ export const useBloodBank = () => {
   }
   return context;
 };
+
+export default BloodBankContext;

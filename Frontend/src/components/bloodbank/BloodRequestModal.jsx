@@ -5,7 +5,7 @@ import Button from '../common/Button';
 import { useBloodBank } from '../../context/BloodBankContext';
 
 export const BloodRequestModal = ({ isOpen, onClose, onSuccess }) => {
-  const { stock, createBloodRequest } = useBloodBank();
+  const { stock, createBloodRequest, refreshStock } = useBloodBank();
 
   const [step, setStep] = useState(1);
   const [selectedGroup, setSelectedGroup] = useState(null);
@@ -13,7 +13,7 @@ export const BloodRequestModal = ({ isOpen, onClose, onSuccess }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
 
-  // Reset modal state on open/close
+  // Reset modal state on open/close and refresh live MongoDB stock
   useEffect(() => {
     if (isOpen) {
       setStep(1);
@@ -21,17 +21,21 @@ export const BloodRequestModal = ({ isOpen, onClose, onSuccess }) => {
       setRequestedUnits(1);
       setIsSubmitting(false);
       setErrorMessage(null);
+      refreshStock();
     }
-  }, [isOpen]);
+  }, [isOpen, refreshStock]);
 
   // Find live stock for currently selected group
   const liveSelectedStock = selectedGroup
-    ? stock.find((s) => s.group === selectedGroup.group)
+    ? stock.find((s) => (s.bloodGroup || s.group) === (selectedGroup.bloodGroup || selectedGroup.group))
     : null;
-  const currentAvailable = liveSelectedStock ? liveSelectedStock.bags : 0;
+  const currentAvailable = liveSelectedStock
+    ? (liveSelectedStock.units !== undefined ? liveSelectedStock.units : liveSelectedStock.bags)
+    : 0;
 
   const handleSelectGroup = (item) => {
-    if (item.bags <= 0) return;
+    const available = item.units !== undefined ? item.units : item.bags;
+    if (available <= 0) return;
     setSelectedGroup(item);
     setRequestedUnits(1);
     setErrorMessage(null);
@@ -52,14 +56,15 @@ export const BloodRequestModal = ({ isOpen, onClose, onSuccess }) => {
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!selectedGroup || isSubmitting) return;
 
+    const groupName = selectedGroup.bloodGroup || selectedGroup.group;
     setIsSubmitting(true);
     setErrorMessage(null);
 
-    const result = createBloodRequest(selectedGroup.group, requestedUnits);
+    const result = await createBloodRequest(groupName, requestedUnits);
 
     if (result.success) {
       setIsSubmitting(false);
@@ -80,6 +85,8 @@ export const BloodRequestModal = ({ isOpen, onClose, onSuccess }) => {
     }
   };
 
+  const selectedGroupName = selectedGroup ? (selectedGroup.bloodGroup || selectedGroup.group) : '';
+
   return (
     <Modal
       isOpen={isOpen}
@@ -91,7 +98,7 @@ export const BloodRequestModal = ({ isOpen, onClose, onSuccess }) => {
           </div>
           <div>
             <span className="text-base font-bold text-slate-800">
-              {step === 1 ? 'Request Blood Units – Select Blood Group' : `Request Blood – Group ${selectedGroup?.group}`}
+              {step === 1 ? 'Request Blood Units – Select Blood Group' : `Request Blood – Group ${selectedGroupName}`}
             </span>
             <span className="block text-[11px] font-normal text-slate-500">
               {step === 1 ? 'Step 1 of 2: Choose from available hospital inventory' : 'Step 2 of 2: Select quantity to request'}
@@ -145,10 +152,13 @@ export const BloodRequestModal = ({ isOpen, onClose, onSuccess }) => {
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {stock.map((item) => {
-              const isUnavailable = item.bags <= 0;
+              const groupName = item.bloodGroup || item.group;
+              const bagCount = item.units !== undefined ? item.units : item.bags;
+              const isUnavailable = bagCount <= 0;
+
               return (
                 <button
-                  key={item.group}
+                  key={groupName}
                   type="button"
                   onClick={() => handleSelectGroup(item)}
                   disabled={isUnavailable}
@@ -164,7 +174,7 @@ export const BloodRequestModal = ({ isOpen, onClose, onSuccess }) => {
                         isUnavailable ? 'text-slate-400' : 'text-slate-800 group-hover:text-rose-600 transition-colors'
                       }`}
                     >
-                      {item.group}
+                      {groupName}
                     </span>
                     <Droplet
                       className={`w-4 h-4 ${
@@ -186,7 +196,7 @@ export const BloodRequestModal = ({ isOpen, onClose, onSuccess }) => {
                     ) : (
                       <div>
                         <div className="text-sm font-bold text-slate-700">
-                          {item.bags} <span className="text-xs font-medium text-slate-500">Units</span>
+                          {bagCount} <span className="text-xs font-medium text-slate-500">Units</span>
                         </div>
                         <span
                           className={`inline-block mt-1 px-1.5 py-0.5 rounded text-[9px] font-bold border ${
@@ -228,10 +238,10 @@ export const BloodRequestModal = ({ isOpen, onClose, onSuccess }) => {
           <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 border border-slate-200">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-xl bg-rose-600 text-white flex items-center justify-center font-black text-xl shadow-sm shadow-rose-500/30">
-                {selectedGroup.group}
+                {selectedGroupName}
               </div>
               <div>
-                <span className="text-sm font-bold text-slate-800">Blood Group {selectedGroup.group}</span>
+                <span className="text-sm font-bold text-slate-800">Blood Group {selectedGroupName}</span>
                 <span className="block text-xs text-slate-500 mt-0.5">
                   Currently Available in Bank: <strong className="text-slate-800 font-bold">{currentAvailable} Units</strong>
                 </span>
@@ -251,7 +261,7 @@ export const BloodRequestModal = ({ isOpen, onClose, onSuccess }) => {
               <AlertTriangle className="w-8 h-8 text-amber-600 mx-auto" />
               <h4 className="text-sm font-bold text-amber-900">No Units Available</h4>
               <p className="text-xs text-amber-700">
-                Units for group {selectedGroup.group} were exhausted or allocated. Please return to Step 1 to select an alternate blood group.
+                Units for group {selectedGroupName} were exhausted or allocated. Please return to Step 1 to select an alternate blood group.
               </p>
             </div>
           ) : (

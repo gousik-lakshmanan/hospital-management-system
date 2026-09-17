@@ -37,7 +37,7 @@ export const AdminDashboard = () => {
   const { bloodRequests } = useBloodBank();
   const [activities, setActivities] = useState(mockActivities);
 
-  const pendingRequests = bloodRequests.filter((r) => r.status === 'pending');
+  const pendingRequests = bloodRequests.filter((r) => r.status === 'Pending' || r.status === 'pending');
   const recentRequests = bloodRequests.slice(0, 3);
 
   const bedOccupancyData = [
@@ -161,7 +161,7 @@ export const AdminDashboard = () => {
                 ) : (
                   recentRequests.map((req) => (
                     <div
-                      key={req.id}
+                      key={req.id || req._id}
                       className="p-3 rounded-xl border border-slate-200 bg-slate-50/60 flex items-center justify-between gap-3 text-xs"
                     >
                       <div className="min-w-0">

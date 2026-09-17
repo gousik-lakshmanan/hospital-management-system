@@ -5,7 +5,7 @@ import Button from '../common/Button';
 import { useBloodBank } from '../../context/BloodBankContext';
 
 export const AdminBloodRequestModal = ({ isOpen, onClose, request, actionType }) => {
-  const { stock, approveBloodRequest, negotiateBloodRequest, rejectBloodRequest } = useBloodBank();
+  const { stock, approveBloodRequest, negotiateBloodRequest, rejectBloodRequest, refreshStock } = useBloodBank();
 
   const [negotiatedUnits, setNegotiatedUnits] = useState(1);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -13,9 +13,11 @@ export const AdminBloodRequestModal = ({ isOpen, onClose, request, actionType })
 
   // Find live stock for requested blood group
   const targetStock = request
-    ? stock.find((s) => s.group === request.bloodGroup)
+    ? stock.find((s) => (s.bloodGroup || s.group) === request.bloodGroup)
     : null;
-  const currentAvailable = targetStock ? targetStock.bags : 0;
+  const currentAvailable = targetStock
+    ? (targetStock.units !== undefined ? targetStock.units : targetStock.bags)
+    : 0;
   const maxNegotiable = request ? Math.min(request.requestedUnits, currentAvailable) : 0;
 
   useEffect(() => {
@@ -23,17 +25,20 @@ export const AdminBloodRequestModal = ({ isOpen, onClose, request, actionType })
       setNegotiatedUnits(Math.min(1, maxNegotiable || 1));
       setIsProcessing(false);
       setErrorMessage(null);
+      refreshStock();
     }
-  }, [isOpen, request, maxNegotiable]);
+  }, [isOpen, request, maxNegotiable, refreshStock]);
 
   if (!request) return null;
 
-  const handleApproveConfirm = () => {
+  const targetId = request._id || request.id;
+
+  const handleApproveConfirm = async () => {
     if (isProcessing) return;
     setIsProcessing(true);
     setErrorMessage(null);
 
-    const result = approveBloodRequest(request.id);
+    const result = await approveBloodRequest(targetId);
     if (result.success) {
       setIsProcessing(false);
       onClose();
@@ -43,12 +48,12 @@ export const AdminBloodRequestModal = ({ isOpen, onClose, request, actionType })
     }
   };
 
-  const handleNegotiateConfirm = () => {
+  const handleNegotiateConfirm = async () => {
     if (isProcessing) return;
     setIsProcessing(true);
     setErrorMessage(null);
 
-    const result = negotiateBloodRequest(request.id, negotiatedUnits);
+    const result = await negotiateBloodRequest(targetId, negotiatedUnits);
     if (result.success) {
       setIsProcessing(false);
       onClose();
@@ -58,12 +63,12 @@ export const AdminBloodRequestModal = ({ isOpen, onClose, request, actionType })
     }
   };
 
-  const handleRejectConfirm = () => {
+  const handleRejectConfirm = async () => {
     if (isProcessing) return;
     setIsProcessing(true);
     setErrorMessage(null);
 
-    const result = rejectBloodRequest(request.id);
+    const result = await rejectBloodRequest(targetId);
     if (result.success) {
       setIsProcessing(false);
       onClose();
@@ -107,7 +112,7 @@ export const AdminBloodRequestModal = ({ isOpen, onClose, request, actionType })
                 : 'Reject Blood Request'}
             </span>
             <span className="block text-[11px] font-normal text-slate-500">
-              Request ID: {request.id}
+              Request ID: {request.id || request._id}
             </span>
           </div>
         </div>
