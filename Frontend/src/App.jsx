@@ -8,6 +8,9 @@ import { RoomProvider } from './context/RoomContext';
 import { BloodBankProvider } from './context/BloodBankContext';
 import { PharmacyProvider } from './context/PharmacyContext';
 import { PrescriptionProvider } from './context/PrescriptionContext';
+import { VisitorProvider } from './context/VisitorContext';
+import { BillingProvider } from './context/BillingContext';
+import { DietPlanProvider } from './context/DietPlanContext';
 import AppRoutes from './routes/AppRoutes';
 
 function App() {
@@ -21,7 +24,13 @@ function App() {
                 <BloodBankProvider>
                   <PharmacyProvider>
                     <PrescriptionProvider>
-                      <AppRoutes />
+                      <VisitorProvider>
+                        <BillingProvider>
+                          <DietPlanProvider>
+                            <AppRoutes />
+                          </DietPlanProvider>
+                        </BillingProvider>
+                      </VisitorProvider>
                     </PrescriptionProvider>
                   </PharmacyProvider>
                 </BloodBankProvider>
@@ -33,5 +42,6 @@ function App() {
     </BrowserRouter>
   );
 }
+
 
 export default App;

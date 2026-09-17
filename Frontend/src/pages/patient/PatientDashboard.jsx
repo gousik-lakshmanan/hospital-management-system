@@ -19,10 +19,11 @@ import Card from '../../components/common/Card';
 import Badge from '../../components/common/Badge';
 import Button from '../../components/common/Button';
 import Modal from '../../components/common/Modal';
-import { mockPatients, mockDietPlans, mockBills, billingService } from '../../data/mockData';
 import { useAuth } from '../../hooks/useAuth';
 import { useAppointments } from '../../context/AppointmentContext';
 import { usePrescriptions } from '../../context/PrescriptionContext';
+import { useDietPlan } from '../../context/DietPlanContext';
+import { useBilling } from '../../context/BillingContext';
 import BookAppointmentModal from '../../components/appointments/BookAppointmentModal';
 import { patientService } from '../../services/api';
 
@@ -31,12 +32,17 @@ export const PatientDashboard = () => {
   const { user } = useAuth();
   const { prescriptions: livePrescriptions } = usePrescriptions();
   const { appointments, cancelAppointment, refreshAppointments } = useAppointments();
+  const { todayTarget, myDietPlans } = useDietPlan();
+  const { myBills } = useBilling();
 
   const [patientData, setPatientData] = useState(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
 
-  const fallbackPatient = mockPatients.find((p) => p.id === 'P-105') || mockPatients[0];
-  const activePatient = patientData || fallbackPatient;
+  const activePatient = patientData || {
+    name: user?.name || 'Patient',
+    email: user?.email || '',
+    vitals: {}
+  };
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -55,8 +61,7 @@ export const PatientDashboard = () => {
     refreshAppointments?.();
   }, [refreshAppointments]);
 
-  const [dietPlan] = useState(mockDietPlans.find((d) => d.id === 'P-105') || mockDietPlans[0]);
-  const [bills, setBills] = useState(mockBills.filter((b) => b.patientId === 'P-105') || [mockBills[1]]);
+  const activeDietPlan = myDietPlans && myDietPlans.length > 0 ? myDietPlans[0] : null;
 
   // Booking Modal State
   const [isBookModalOpen, setIsBookModalOpen] = useState(false);
@@ -76,17 +81,13 @@ export const PatientDashboard = () => {
     setIsBookModalOpen(true);
   };
 
-  const handlePayBill = (id) => {
-    billingService.pay(id);
-    setBills([...mockBills.filter((b) => b.patientId === 'P-105')]);
-  };
-
   const handleConfirmCancel = async () => {
     if (cancelModalAppt) {
       await cancelAppointment(cancelModalAppt._id || cancelModalAppt.id, 'Cancelled by patient');
       setCancelModalAppt(null);
     }
   };
+
 
   // Filter appointments for this logged-in patient (backend already scopes to authenticated patient)
   const patientAppointments = appointments;
@@ -113,21 +114,22 @@ export const PatientDashboard = () => {
           </p>
         </div>
 
-        {/* Health Streak */}
+        {/* Nutrition Target Badge */}
         <div className="flex items-center gap-3 bg-white/10 px-4 py-2.5 rounded-xl border border-white/10 shrink-0">
           <div className="w-10 h-10 rounded-full bg-amber-400 text-amber-950 flex items-center justify-center font-bold text-sm shadow-xs">
-            🔥
+            🥗
           </div>
           <div>
             <span className="text-[10px] text-blue-100 block font-semibold uppercase tracking-wider">
-              Health Streak
+              Daily Nutrition
             </span>
             <span className="text-base font-bold text-white block leading-none mt-0.5">
-              {dietPlan.streak} Days Active
+              {todayTarget?.calories || activeDietPlan?.caloriesTarget || 2000} kcal Target
             </span>
           </div>
         </div>
       </div>
+
 
       {/* QUICK ACTIONS SECTION (Doctor & Nurse Booking Cards) */}
       <div className="space-y-3">
@@ -516,37 +518,52 @@ export const PatientDashboard = () => {
 
           {/* Diet overview summary */}
           <Card title="Today's Meal Target" subtitle="Assigned recovery diet plan">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between text-xs border-b border-slate-100 pb-2">
-                <span className="text-slate-500 font-medium">Daily Calorie Budget</span>
-                <span className="font-bold text-slate-800">{dietPlan.calories}</span>
-              </div>
-              <div className="flex items-center justify-between text-xs border-b border-slate-100 pb-2">
-                <span className="text-slate-500 font-medium">Water Intake Target</span>
-                <span className="font-bold text-slate-800">{dietPlan.waterIntake}</span>
-              </div>
-              <div className="space-y-2 pt-1 text-xs">
-                <div>
-                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">
-                    Breakfast Recommendation
-                  </span>
-                  <span className="text-slate-600 block mt-0.5 font-medium">{dietPlan.breakfast}</span>
+            {todayTarget || activeDietPlan ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-xs border-b border-slate-100 pb-2">
+                  <span className="text-slate-500 font-medium">Daily Calorie Budget</span>
+                  <span className="font-bold text-slate-800">{todayTarget?.calories || activeDietPlan?.caloriesTarget} kcal</span>
                 </div>
-                <div>
-                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">
-                    Lunch Recommendation
-                  </span>
-                  <span className="text-slate-600 block mt-0.5 font-medium">{dietPlan.lunch}</span>
+                <div className="flex items-center justify-between text-xs border-b border-slate-100 pb-2">
+                  <span className="text-slate-500 font-medium">Water Intake Target</span>
+                  <span className="font-bold text-slate-800">{todayTarget?.water || activeDietPlan?.waterTarget} Liters</span>
+                </div>
+                <div className="space-y-2 pt-1 text-xs">
+                  <div>
+                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">
+                      Breakfast Recommendation
+                    </span>
+                    <span className="text-slate-600 block mt-0.5 font-medium">
+                      {todayTarget?.breakfast || activeDietPlan?.weeklyMeals?.[0]?.breakfast || 'Healthy breakfast porridge'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">
+                      Lunch Recommendation
+                    </span>
+                    <span className="text-slate-600 block mt-0.5 font-medium">
+                      {todayTarget?.lunch || activeDietPlan?.weeklyMeals?.[0]?.lunch || 'High-fiber vegetable bowl'}
+                    </span>
+                  </div>
+                </div>
+                <div className="pt-2">
+                  <Button variant="outline" size="sm" className="w-full" onClick={() => setActiveModal('diet')}>
+                    View Full Weekly Plan
+                  </Button>
                 </div>
               </div>
-              <div className="pt-2">
-                <Button variant="outline" size="sm" className="w-full" onClick={() => setActiveModal('diet')}>
-                  View Weekly Schedule
+            ) : (
+              <div className="py-6 text-center space-y-2">
+                <Utensils className="w-8 h-8 text-slate-300 mx-auto" />
+                <p className="text-xs text-slate-500 font-medium">No active diet plan found</p>
+                <Button variant="primary" size="sm" onClick={() => navigate('/ai/diet-planner')}>
+                  Consult AI Planner
                 </Button>
               </div>
-            </div>
+            )}
           </Card>
         </div>
+
       </div>
 
       {/* BOOK APPOINTMENT MODAL */}
@@ -707,32 +724,45 @@ export const PatientDashboard = () => {
         isOpen={activeModal === 'diet'}
         onClose={() => setActiveModal(null)}
         title="Recovery Diet Plan Layout"
-        footer={<Button onClick={() => setActiveModal(null)}>Close Schedule</Button>}
+        footer={
+          <div className="flex justify-between w-full">
+            <Button variant="outline" size="sm" onClick={() => navigate('/ai/diet-planner')}>
+              Generate New Diet Plan
+            </Button>
+            <Button onClick={() => setActiveModal(null)}>Close Schedule</Button>
+          </div>
+        }
       >
         <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="p-3.5 border border-slate-200 rounded-xl">
-              <span className="text-[10px] text-slate-400 font-bold block uppercase">Breakfast Target</span>
-              <p className="text-xs text-slate-700 mt-1 font-semibold">{dietPlan.breakfast}</p>
-            </div>
-            <div className="p-3.5 border border-slate-200 rounded-xl">
-              <span className="text-[10px] text-slate-400 font-bold block uppercase">Lunch Target</span>
-              <p className="text-xs text-slate-700 mt-1 font-semibold">{dietPlan.lunch}</p>
-            </div>
-            <div className="p-3.5 border border-slate-200 rounded-xl">
-              <span className="text-[10px] text-slate-400 font-bold block uppercase">Dinner Target</span>
-              <p className="text-xs text-slate-700 mt-1 font-semibold">{dietPlan.dinner}</p>
-            </div>
-            <div className="p-3.5 border border-slate-200 rounded-xl">
-              <span className="text-[10px] text-slate-400 font-bold block uppercase">Snacks recommendation</span>
-              <p className="text-xs text-slate-700 mt-1 font-semibold">{dietPlan.snacks}</p>
-            </div>
-          </div>
+          {activeDietPlan ? (
+            <>
+              {activeDietPlan.clinicalNote && (
+                <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-900 leading-relaxed">
+                  <strong>Dietary Focus:</strong> {activeDietPlan.clinicalNote}
+                </div>
+              )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto">
+                {(activeDietPlan.weeklyMeals || []).map((dayPlan, idx) => (
+                  <div key={idx} className="p-3 border border-slate-200 rounded-xl bg-slate-50/50 space-y-1 text-xs">
+                    <span className="font-bold text-blue-700 block text-xs">{dayPlan.day}</span>
+                    <div><strong className="text-[10px] text-slate-400 uppercase">Breakfast:</strong> <span className="text-slate-700">{dayPlan.breakfast}</span></div>
+                    <div><strong className="text-[10px] text-slate-400 uppercase">Lunch:</strong> <span className="text-slate-700">{dayPlan.lunch}</span></div>
+                    <div><strong className="text-[10px] text-slate-400 uppercase">Dinner:</strong> <span className="text-slate-700">{dayPlan.dinner}</span></div>
+                    {dayPlan.snacks && <div><strong className="text-[10px] text-slate-400 uppercase">Snacks:</strong> <span className="text-slate-700">{dayPlan.snacks}</span></div>}
+                  </div>
+                ))}
+              </div>
 
-          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex justify-between text-xs font-semibold">
-            <span className="text-slate-500">Dietary Nutrition:</span>
-            <span className="text-slate-800">{dietPlan.nutrition}</span>
-          </div>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex justify-between text-xs font-semibold">
+                <span className="text-slate-500">Daily Caloric Target:</span>
+                <span className="text-slate-800">{activeDietPlan.caloriesTarget} kcal / day ({activeDietPlan.waterTarget}L Water)</span>
+              </div>
+            </>
+          ) : (
+            <div className="py-8 text-center text-xs text-slate-400">
+              No personalized recovery diet plan currently active.
+            </div>
+          )}
         </div>
       </Modal>
 
@@ -740,49 +770,72 @@ export const PatientDashboard = () => {
       <Modal
         isOpen={activeModal === 'billing'}
         onClose={() => setActiveModal(null)}
-        title="My Bills & Invoices"
-        footer={<Button onClick={() => setActiveModal(null)}>Close Billing</Button>}
+        title="My Hospital Bills & Invoices"
+        footer={<Button onClick={() => setActiveModal(null)}>Close Invoices</Button>}
       >
         <div className="space-y-4">
-          {bills.length === 0 ? (
+          {(!myBills || myBills.length === 0) ? (
             <div className="py-12 text-center text-slate-400 text-xs">
-              No bills on file.
+              No billing statements on file.
             </div>
           ) : (
-            bills.map((bill) => (
-              <div key={bill.id} className="border border-slate-200 rounded-xl p-4 space-y-3 bg-slate-50/50">
+            myBills.map((bill) => (
+              <div key={bill._id || bill.id} className="border border-slate-200 rounded-xl p-4 space-y-3 bg-slate-50/50">
                 <div className="flex justify-between items-center flex-wrap gap-2">
                   <div>
-                    <span className="font-semibold text-xs text-slate-800">{bill.id}</span>
-                    <span className="text-[10px] text-slate-400 block mt-0.5">Date: {bill.date}</span>
+                    <span className="font-bold text-xs text-blue-600 font-mono">{bill.invoiceNumber || bill.id}</span>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">
+                      Date: {new Date(bill.createdAt || bill.date).toLocaleDateString()}
+                    </span>
                   </div>
-                  <Badge>{bill.status}</Badge>
+                  <Badge variant={bill.paymentStatus === 'Paid' ? 'success' : bill.paymentStatus === 'Partially Paid' ? 'warning' : 'danger'}>
+                    {bill.paymentStatus || bill.status}
+                  </Badge>
                 </div>
 
                 <div className="space-y-1 text-xs text-slate-600 border-t border-b border-slate-200 py-3">
-                  <div className="flex justify-between">
-                    <span>Clinical Room Charges:</span>
-                    <span>₹{bill.roomCharges}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Doctor Consult Charges:</span>
-                    <span>₹{bill.doctorCharges}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Pharmacy Medicines Charges:</span>
-                    <span>₹{bill.medicineCharges}</span>
-                  </div>
+                  {bill.items && bill.items.length > 0 ? (
+                    bill.items.map((it, idx) => (
+                      <div key={idx} className="flex justify-between">
+                        <span>{it.description} (x{it.quantity}):</span>
+                        <span>₹{it.amount}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="flex justify-between">
+                      <span>Hospital Services:</span>
+                      <span>₹{bill.totalAmount || bill.total}</span>
+                    </div>
+                  )}
+                  {bill.discount > 0 && (
+                    <div className="flex justify-between text-emerald-600">
+                      <span>Discount:</span>
+                      <span>-₹{bill.discount}</span>
+                    </div>
+                  )}
+                  {bill.tax > 0 && (
+                    <div className="flex justify-between text-slate-500">
+                      <span>Tax / GST:</span>
+                      <span>+₹{bill.tax}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between font-bold text-slate-800 pt-1.5 border-t border-slate-200/50">
                     <span>Total Amount Due:</span>
-                    <span>₹{bill.total}</span>
+                    <span>₹{bill.totalAmount || bill.total}</span>
+                  </div>
+                  <div className="flex justify-between font-semibold text-emerald-700">
+                    <span>Amount Paid:</span>
+                    <span>₹{bill.amountPaid || 0}</span>
+                  </div>
+                  <div className="flex justify-between font-bold text-rose-700">
+                    <span>Balance Due:</span>
+                    <span>₹{bill.balanceAmount || 0}</span>
                   </div>
                 </div>
 
-                {bill.status === 'Pending' && (
-                  <div className="flex justify-end pt-1">
-                    <Button variant="primary" size="sm" onClick={() => handlePayBill(bill.id)}>
-                      Pay Bill (Mock Gateway)
-                    </Button>
+                {(bill.paymentStatus === 'Unpaid' || bill.paymentStatus === 'Partially Paid') && (
+                  <div className="bg-amber-50 border border-amber-200 text-amber-900 text-[11px] p-2.5 rounded-lg">
+                    💳 Please visit the hospital reception or billing desk to settle your outstanding balance of <strong>₹{bill.balanceAmount}</strong>.
                   </div>
                 )}
               </div>
@@ -790,6 +843,7 @@ export const PatientDashboard = () => {
           )}
         </div>
       </Modal>
+
 
       {/* Cancel Appointment Confirmation Modal */}
       <Modal

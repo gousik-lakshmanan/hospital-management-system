@@ -8,6 +8,7 @@ import Button from '../../components/common/Button';
 import { mockActivities } from '../../data/mockData';
 import { useRooms } from '../../context/RoomContext';
 import { useBloodBank } from '../../context/BloodBankContext';
+import { useBilling } from '../../context/BillingContext';
 import BloodRequestStatusBadge from '../../components/bloodbank/BloodRequestStatusBadge';
 
 // Chart mock data
@@ -35,6 +36,7 @@ export const AdminDashboard = () => {
   const navigate = useNavigate();
   const { totalBeds, occupiedBeds, availableBeds } = useRooms();
   const { bloodRequests } = useBloodBank();
+  const { summary } = useBilling();
   const [activities, setActivities] = useState(mockActivities);
 
   const pendingRequests = bloodRequests.filter((r) => r.status === 'Pending' || r.status === 'pending');
@@ -44,6 +46,8 @@ export const AdminDashboard = () => {
     { name: 'Occupied', value: occupiedBeds, color: '#EF4444' },
     { name: 'Available', value: availableBeds, color: '#10B981' }
   ];
+
+  const revenueDisplay = summary?.totalPaid ? `₹${summary.totalPaid.toLocaleString()}` : '₹42,750';
 
   const stats = [
     { label: 'Total Patients', value: '5', change: '+2 new', icon: Users, color: 'text-blue-600 bg-blue-50' },
@@ -60,8 +64,9 @@ export const AdminDashboard = () => {
       icon: Droplet,
       color: 'text-rose-600 bg-rose-50'
     },
-    { label: "Today's Revenue", value: '₹42,750', change: '+18% vs yesterday', icon: IndianRupee, color: 'text-green-600 bg-green-50' }
+    { label: "Total Revenue", value: revenueDisplay, change: 'Collected collections', icon: IndianRupee, color: 'text-green-600 bg-green-50' }
   ];
+
 
   return (
     <div className="space-y-6">

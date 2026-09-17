@@ -44,8 +44,12 @@ export const AppLayout = ({ children }) => {
             {getToastIcon(toast.type)}
           </div>
           <div className="flex-1">
-            <h4 className="text-xs font-semibold text-slate-800">{toast.title}</h4>
-            <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">{toast.description}</p>
+            <h4 className="text-xs font-semibold text-slate-800">
+              {typeof toast.title === 'string' ? toast.title : (toast.title?.title || toast.title?.message || String(toast.title || ''))}
+            </h4>
+            <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+              {typeof toast.description === 'string' ? toast.description : (toast.description?.description || toast.description?.message || String(toast.description || ''))}
+            </p>
           </div>
           <button
             onClick={clearToast}

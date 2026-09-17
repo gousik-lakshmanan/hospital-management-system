@@ -13,6 +13,9 @@ import pharmacyRoutes from './routes/pharmacyRoutes.js';
 import prescriptionRoutes from './routes/prescriptionRoutes.js';
 import bloodBankRoutes from './routes/bloodBankRoutes.js';
 import bloodRequestRoutes from './routes/bloodRequestRoutes.js';
+import visitorRoutes from './routes/visitorRoutes.js';
+import billingRoutes from './routes/billingRoutes.js';
+import dietPlanRoutes from './routes/dietPlanRoutes.js';
 import { notFound, errorHandler } from './middleware/errorMiddleware.js';
 
 const app = express();
@@ -56,6 +59,10 @@ app.use('/api/pharmacy', pharmacyRoutes);
 app.use('/api/prescriptions', prescriptionRoutes);
 app.use('/api/blood-bank', bloodBankRoutes);
 app.use('/api/blood-requests', bloodRequestRoutes);
+app.use('/api/visitors', visitorRoutes);
+app.use('/api/billing', billingRoutes);
+app.use('/api/diet-plans', dietPlanRoutes);
+
 
 // Error Handling Middleware
 app.use(notFound);

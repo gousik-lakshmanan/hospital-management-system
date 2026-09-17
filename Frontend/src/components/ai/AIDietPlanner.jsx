@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Salad, Calendar, ChevronRight, Apple, Heart, Compass, ShieldAlert, Activity, AlertCircle, Sparkles } from 'lucide-react';
+import { useDietPlan } from '../../context/DietPlanContext';
 import Card from '../common/Card';
 import Button from '../common/Button';
 
@@ -25,6 +26,8 @@ export const DISEASE_OPTIONS = [
 ];
 
 export const AIDietPlanner = () => {
+  const { generateDietPlan, myDietPlans } = useDietPlan();
+
   const [age, setAge] = useState('22');
   const [height, setHeight] = useState('175');
   const [weight, setWeight] = useState('70');
@@ -36,6 +39,30 @@ export const AIDietPlanner = () => {
   const [diseaseError, setDiseaseError] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
+
+  // Initialize with latest saved diet plan if exists
+  useEffect(() => {
+    if (myDietPlans && myDietPlans.length > 0 && !result) {
+      const latest = myDietPlans[0];
+      setResult({
+        calories: `${latest.caloriesTarget} kcal / day`,
+        water: `${latest.waterTarget} Liters / day`,
+        macros: typeof latest.macros === 'object'
+          ? `Carbs: ${latest.macros.carbs || 0}g | Protein: ${latest.macros.protein || 0}g | Fats: ${latest.macros.fats || 0}g | Fiber: ${latest.macros.fiber || 0}g`
+          : latest.macros || 'Standard Macronutrient Balance',
+        currentDisease: latest.questionnaire?.currentDisease !== 'none' ? latest.questionnaire?.currentDisease : '',
+        clinicalNote: latest.clinicalNote,
+        meals: latest.weeklyMeals || []
+      });
+      if (latest.questionnaire) {
+        if (latest.questionnaire.age) setAge(latest.questionnaire.age.toString());
+        if (latest.questionnaire.height) setHeight(latest.questionnaire.height.toString());
+        if (latest.questionnaire.weight) setWeight(latest.questionnaire.weight.toString());
+        if (latest.questionnaire.preference) setPreference(latest.questionnaire.preference);
+        if (latest.questionnaire.activity) setActivity(latest.questionnaire.activity);
+      }
+    }
+  }, [myDietPlans]);
 
   const handleDiseaseChange = (e) => {
     const value = e.target.value;
@@ -53,7 +80,7 @@ export const AIDietPlanner = () => {
     }
   };
 
-  const handleGenerate = (e) => {
+  const handleGenerate = async (e) => {
     e.preventDefault();
 
     // Validate custom disease if "Other" is selected
@@ -72,113 +99,38 @@ export const AIDietPlanner = () => {
     setDiseaseError('');
     setLoading(true);
 
-    setTimeout(() => {
-      // Simulate diet calculations based on inputs
-      const weightVal = parseFloat(weight) || 70;
-      const heightVal = parseFloat(height) || 170;
-      const ageVal = parseFloat(age) || 25;
-      
-      // Harris-Benedict Equation for BMR
-      let bmr = 88.362 + (13.397 * weightVal) + (4.799 * heightVal) - (5.677 * ageVal);
-      let multiplier = 1.2; // Sedentary
-      if (activity === 'moderate') multiplier = 1.55;
-      if (activity === 'active') multiplier = 1.725;
-      
-      let calories = Math.round(bmr * multiplier);
-      let water = Math.round((weightVal * 35) / 100) / 10; // 35ml per kg of bodyweight
-      let macros = 'Carbs: 50% | Protein: 25% | Fats: 25%';
-      let clinicalNote = null;
-
-      // Condition-specific adjustments
-      const diseaseLower = currentDisease.toLowerCase();
-      if (diseaseLower.includes('diabetes')) {
-        macros = 'Complex Carbs: 40% | Lean Protein: 30% | Healthy Fats: 30%';
-        clinicalNote = 'Low Glycemic Index (GI) focus with high soluble fiber to regulate blood glucose spikes.';
-      } else if (diseaseLower.includes('hypertension') || diseaseLower.includes('blood pressure')) {
-        macros = 'Carbs: 50% | Protein: 25% | Healthy Fats: 25% (Low Sodium)';
-        clinicalNote = 'DASH-aligned dietary protocol focusing on potassium-rich foods and restricted sodium (< 2g/day).';
-      } else if (diseaseLower.includes('dengue') || diseaseLower.includes('typhoid') || diseaseLower.includes('malaria')) {
-        water = Math.max(water, 3.5);
-        clinicalNote = 'High hydration and easy-to-digest light nutrient meals with electrolyte and antioxidant support.';
-      } else if (diseaseLower.includes('gastritis') || diseaseLower.includes('ulcer')) {
-        clinicalNote = 'Non-acidic, bland soothing foods. Avoid spicy, citrus, caffeine, and deep-fried items.';
-      } else if (diseaseLower.includes('kidney') || diseaseLower.includes('renal')) {
-        macros = 'Carbs: 55% | Controlled Protein: 20% | Fats: 25%';
-        clinicalNote = 'Controlled protein and low potassium/phosphorus foods. Consult your nephrologist for precise fluid limits.';
-      } else if (diseaseLower.includes('heart') || diseaseLower.includes('cholesterol')) {
-        macros = 'High-Fiber Carbs: 45% | Protein: 25% | Omega-3 Rich Fats: 30%';
-        clinicalNote = 'Zero saturated trans-fats, high soluble fiber, garlic, walnuts, and plant sterols for cardiovascular support.';
-      } else if (diseaseLower.includes('obesity') || diseaseLower.includes('weight')) {
-        calories = Math.max(1200, Math.round(calories * 0.85)); // 15% caloric deficit
-        macros = 'Carbs: 40% | High Protein: 35% | Fats: 25%';
-        clinicalNote = 'Caloric deficit with high satiety protein and volume vegetables.';
-      } else if (currentDisease) {
-        clinicalNote = `Dietary recommendations customized to support ${currentDisease} recovery and wellness.`;
-      }
-
-      const mealPlan = {
-        calories: `${calories} kcal / day`,
-        water: `${water} Liters / day`,
-        macros: macros,
-        currentDisease: currentDisease,
-        clinicalNote: clinicalNote,
-        meals: [
-          {
-            day: 'Monday',
-            breakfast: currentDisease.toLowerCase().includes('diabetes') ? 'Steel-cut oats with cinnamon, walnuts, and chia seeds' : 'Oats porridge with chia seeds and honey',
-            lunch: 'Quinoa stir-fry with tofu, steamed spinach, and cucumber salad',
-            dinner: 'Whole wheat flatbread with yellow lentil soup (dal)',
-            snacks: 'Spiced buttermilk, roasted pumpkin seeds'
-          },
-          {
-            day: 'Tuesday',
-            breakfast: 'Vegetable semolina upma with soaked almonds',
-            lunch: 'Brown rice, mixed bean chili, tomato cucumber salad',
-            dinner: 'Sweet potato soup with grilled cottage cheese',
-            snacks: 'Apple slices with almond butter'
-          },
-          {
-            day: 'Wednesday',
-            breakfast: 'Multigrain toast with avocado mash and boiled egg/paneer',
-            lunch: 'Paneer bhurji (scrambled cottage cheese) with rotis & green salad',
-            dinner: 'Stir-fried broccoli and mushrooms with quinoa',
-            snacks: 'Spiced roasted chickpeas, green tea'
-          },
-          {
-            day: 'Thursday',
-            breakfast: 'Sprouted moong dal salad with lemon dressing',
-            lunch: 'Sautéed brown rice with vegetable curry and curd',
-            dinner: 'Lentil soup with whole wheat garlic bread',
-            snacks: 'Mixed berries, walnuts'
-          },
-          {
-            day: 'Friday',
-            breakfast: 'Banana oats smoothie with flaxseed powder',
-            lunch: 'Quinoa bowl with bell peppers and roasted beans',
-            dinner: 'Soft rotis with dry bottle gourd / spinach sabzi',
-            snacks: 'Cucumber sticks with hummus'
-          },
-          {
-            day: 'Saturday',
-            breakfast: 'Paneer stuffed paratha (cooked with minimal olive oil)',
-            lunch: 'Chickpea spinach curry with brown rice',
-            dinner: 'Baked vegetable bake with fresh tomato basil sauce',
-            snacks: 'Roasted almonds, herbal tea'
-          },
-          {
-            day: 'Sunday',
-            breakfast: 'Poha with roasted peanuts and fresh curry leaves',
-            lunch: 'Millet khichdi with roasted papad and fresh curd',
-            dinner: 'Minestrone vegetable soup with grilled tofu skewers',
-            snacks: 'Chia pudding with almond milk'
-          }
-        ]
+    try {
+      const questionnaire = {
+        age: Number(age) || 25,
+        height: Number(height) || 170,
+        weight: Number(weight) || 70,
+        preference,
+        allergies: allergies === 'None' || !allergies.trim() ? [] : [allergies.trim()],
+        activity,
+        currentDisease: currentDisease || 'none'
       };
 
-      setResult(mealPlan);
+      const res = await generateDietPlan(questionnaire);
+      if (res?.data) {
+        const data = res.data;
+        setResult({
+          calories: `${data.caloriesTarget} kcal / day`,
+          water: `${data.waterTarget} Liters / day`,
+          macros: typeof data.macros === 'object'
+            ? `Carbs: ${data.macros.carbs || 0}g | Protein: ${data.macros.protein || 0}g | Fats: ${data.macros.fats || 0}g | Fiber: ${data.macros.fiber || 0}g`
+            : data.macros || 'Balanced',
+          currentDisease: data.questionnaire?.currentDisease !== 'none' ? data.questionnaire?.currentDisease : '',
+          clinicalNote: data.clinicalNote,
+          meals: data.weeklyMeals || []
+        });
+      }
+    } catch (err) {
+      console.error('Error generating diet plan:', err);
+    } finally {
       setLoading(false);
-    }, 1200);
+    }
   };
+
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">

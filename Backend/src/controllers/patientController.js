@@ -59,11 +59,13 @@ export const getPatients = async (req, res, next) => {
       success: true,
       count: patients.length,
       patients,
+      data: patients,
     });
   } catch (error) {
     next(error);
   }
 };
+
 
 // @desc    Get single patient by ID or userId
 // @route   GET /api/patients/:id
