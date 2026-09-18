@@ -135,6 +135,205 @@ export const createDietPlan = async (req, res) => {
   }
 };
 
+// POST /api/diet-plans/ai-generate - Generate personalized AI diet plan with Gemini
+export const generateAIDietPlan = async (req, res) => {
+  try {
+    const {
+      age,
+      gender = 'male',
+      height,
+      weight,
+      dietaryType,
+      preference,
+      allergies,
+      activityLevel,
+      activity,
+      healthCondition,
+      currentDisease,
+      patientId
+    } = req.body;
+
+    const numAge = Number(age);
+    const numHeight = Number(height);
+    const numWeight = Number(weight);
+
+    if (!Number.isFinite(numAge) || numAge <= 0 || numAge > 120) {
+      return res.status(400).json({
+        success: false,
+        message: 'Age must be a positive number between 1 and 120 (years).'
+      });
+    }
+
+    if (!Number.isFinite(numHeight) || numHeight <= 0 || numHeight > 260) {
+      return res.status(400).json({
+        success: false,
+        message: 'Height must be a positive number in centimeters.'
+      });
+    }
+
+    if (!Number.isFinite(numWeight) || numWeight <= 0 || numWeight > 300) {
+      return res.status(400).json({
+        success: false,
+        message: 'Weight must be a positive number in kilograms.'
+      });
+    }
+
+    const resolvedPreference = String(preference || dietaryType || 'vegetarian').toLowerCase().trim();
+    const validPreferences = ['vegetarian', 'vegan', 'non-vegetarian', 'keto', 'eggetarian'];
+    if (!validPreferences.includes(resolvedPreference)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid dietary type. Choose Vegetarian, Vegan, Non-Vegetarian, or Keto-Friendly.'
+      });
+    }
+
+    const resolvedActivity = String(activity || activityLevel || 'moderate').toLowerCase().trim();
+    const validActivities = ['sedentary', 'light', 'moderate', 'active', 'very-active'];
+    if (!validActivities.includes(resolvedActivity)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid activity level. Choose Sedentary, Moderate, or Active.'
+      });
+    }
+
+    const resolvedDisease = String(healthCondition || currentDisease || 'none').trim();
+
+    const allergiesArray = Array.isArray(allergies)
+      ? allergies.map((a) => String(a).trim()).filter(Boolean)
+      : typeof allergies === 'string'
+        ? allergies.split(',').map((a) => a.trim()).filter(Boolean)
+        : [];
+
+    // Patient association - never trust a raw userId from the frontend
+    let targetUserId = req.user._id;
+    let targetPatientId = null;
+    let patientName = req.user.name || 'Patient';
+
+    if (req.user.role === 'patient') {
+      const patient = await Patient.findOne({ userId: req.user._id });
+      if (patient) {
+        targetPatientId = patient._id;
+        patientName = patient.name;
+      }
+    } else if (patientId && mongoose.Types.ObjectId.isValid(patientId)) {
+      const patient = await Patient.findById(patientId);
+      if (!patient) {
+        return res.status(404).json({
+          success: false,
+          message: 'Referenced patient was not found.'
+        });
+      }
+      targetPatientId = patient._id;
+      targetUserId = patient.userId || req.user._id;
+      patientName = patient.name;
+    }
+
+    const questionnaire = {
+      age: numAge,
+      gender,
+      height: numHeight,
+      weight: numWeight,
+      preference: resolvedPreference,
+      allergies: allergiesArray,
+      activity: resolvedActivity,
+      currentDisease: resolvedDisease
+    };
+
+    // Generate AI/clinical plan via Gemini (with deterministic fallback)
+    const generated = await generateDietPlanWithAI(questionnaire);
+
+    // Identify today's meal
+    const todayName = getDayName();
+    const todayMeal = generated.weeklyMeals.find(m => m.day === todayName) || generated.weeklyMeals[0] || {};
+
+    const todayTarget = {
+      breakfast: todayMeal.breakfast || '',
+      lunch: todayMeal.lunch || '',
+      dinner: todayMeal.dinner || '',
+      snacks: todayMeal.snacks || '',
+      calories: generated.caloriesTarget,
+      water: generated.waterTarget
+    };
+
+    // Deactivate existing active plans for this user/patient
+    await DietPlan.updateMany(
+      {
+        $or: [
+          { userId: targetUserId },
+          ...(targetPatientId ? [{ patientId: targetPatientId }] : [])
+        ],
+        isActive: true
+      },
+      { $set: { isActive: false } }
+    );
+
+    // Create new diet plan
+    const newDietPlan = await DietPlan.create({
+      userId: targetUserId,
+      patientId: targetPatientId,
+      patientName,
+      questionnaire,
+      caloriesTarget: generated.caloriesTarget,
+      waterTarget: generated.waterTarget,
+      macros: generated.macros,
+      clinicalNote: generated.clinicalNote,
+      weeklyMeals: generated.weeklyMeals,
+      todayTarget,
+      aiSummary: generated.summary,
+      exercisePlan: generated.exercisePlan,
+      healthSafetyNotes: generated.healthSafetyNotes,
+      disclaimer: generated.disclaimer,
+      source: 'AI_GENERATED',
+      assignedBy: req.user.role !== 'patient' ? req.user._id : null,
+      assignedByName: req.user.role !== 'patient' ? req.user.name : '',
+      isActive: true
+    });
+
+    if (req.user.role !== 'patient' && targetUserId) {
+      createNotification({
+        recipient: targetUserId,
+        title: 'New AI Diet Plan Available',
+        message: `A personalized AI diet plan was generated by ${req.user.name || 'Medical Staff'}.`,
+        type: 'diet_plan',
+        priority: 'normal',
+        link: '/patient/diet-plan',
+        metadata: { planId: newDietPlan._id },
+        dedupeKey: `diet-ai-${newDietPlan._id}`
+      });
+    }
+
+    const generatedMacros = generated.macros || {};
+
+    return res.status(201).json({
+      success: true,
+      message: 'Personalized AI diet plan generated and saved successfully.',
+      data: newDietPlan,
+      plan: {
+        summary: generated.summary,
+        dailyCalories: generated.dailyCalories,
+        waterIntake: generated.waterIntake,
+        macros: {
+          protein: `${generatedMacros.protein || 0}g`,
+          carbohydrates: `${generatedMacros.carbs || 0}g`,
+          fats: `${generatedMacros.fats || 0}g`,
+          fiber: `${generatedMacros.fiber || 0}g`
+        },
+        weeklyMealPlan: generated.weeklyMealPlan,
+        exercisePlan: generated.exercisePlan,
+        healthSafetyNotes: generated.healthSafetyNotes,
+        disclaimer: generated.disclaimer,
+        clinicalNote: generated.clinicalNote
+      }
+    });
+  } catch (error) {
+    console.error('Error in generateAIDietPlan:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to generate the AI diet plan. Please try again.'
+    });
+  }
+};
+
 // GET /api/diet-plans/me - Get current user's diet plans
 export const getMyDietPlans = async (req, res) => {
   try {

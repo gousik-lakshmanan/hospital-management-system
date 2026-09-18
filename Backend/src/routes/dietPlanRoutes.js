@@ -1,6 +1,7 @@
 import express from 'express';
 import {
   createDietPlan,
+  generateAIDietPlan,
   getMyDietPlans,
   getMyTodayTarget,
   getDietPlans,
@@ -19,6 +20,9 @@ router.get('/me/today', authorize('patient', 'doctor', 'nurse', 'admin', 'recept
 
 // Generate diet plan (Patient or Clinician)
 router.post('/', authorize('patient', 'doctor', 'nurse', 'admin'), createDietPlan);
+
+// AI Diet Planner - generate personalized plan via Gemini (Patient or Clinician)
+router.post('/ai-generate', authorize('patient', 'doctor', 'nurse', 'admin'), generateAIDietPlan);
 
 // Clinical directory & direct assignment (Doctors, Nurses, Admins)
 router.get('/', authorize('doctor', 'nurse', 'admin'), getDietPlans);

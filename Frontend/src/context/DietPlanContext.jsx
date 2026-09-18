@@ -99,6 +99,32 @@ export const DietPlanProvider = ({ children }) => {
     }
   };
 
+  const generateAIDietPlan = async (payload) => {
+    try {
+      setLoading(true);
+      const res = await dietPlanService.generateAIDietPlan(payload);
+      if (res.success) {
+        addNotification(
+          'AI Diet Plan Generated',
+          'Your personalized AI diet plan was created and saved.',
+          'success'
+        );
+        await refreshMyDietPlans();
+        await refreshTodayTarget();
+        if (currentRole === 'doctor' || currentRole === 'nurse' || currentRole === 'admin') {
+          await refreshDietPlans();
+        }
+        return res;
+      }
+    } catch (err) {
+      const msg = err.response?.data?.message || err.message || 'Failed to generate the AI diet plan.';
+      addNotification('Error', msg, 'danger');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const assignDietPlan = async (planData) => {
     try {
       setLoading(true);
@@ -133,6 +159,7 @@ export const DietPlanProvider = ({ children }) => {
         refreshMyDietPlans,
         refreshTodayTarget,
         generateDietPlan,
+        generateAIDietPlan,
         assignDietPlan
       }}
     >

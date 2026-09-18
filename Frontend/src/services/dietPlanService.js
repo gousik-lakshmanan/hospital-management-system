@@ -6,6 +6,11 @@ export const dietPlanService = {
     return response.data;
   },
 
+  generateAIDietPlan: async (payload) => {
+    const response = await api.post('/diet-plans/ai-generate', payload);
+    return response.data;
+  },
+
   getMyDietPlans: async () => {
     const response = await api.get('/diet-plans/me');
     return response.data;

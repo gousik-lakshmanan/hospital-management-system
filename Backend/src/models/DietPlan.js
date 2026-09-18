@@ -12,6 +12,22 @@ const weeklyMealSchema = new mongoose.Schema({
   snacks: { type: String, default: '', trim: true }
 }, { _id: false });
 
+const aiSummarySchema = new mongoose.Schema({
+  age: { type: Number, default: 0 },
+  heightCm: { type: Number, default: 0 },
+  weightKg: { type: Number, default: 0 },
+  bmi: { type: Number, default: null },
+  dietaryType: { type: String, default: '', trim: true },
+  activityLevel: { type: String, default: '', trim: true }
+}, { _id: false });
+
+const exercisePlanSchema = new mongoose.Schema({
+  activity: { type: String, default: '', trim: true },
+  duration: { type: String, default: '', trim: true },
+  frequency: { type: String, default: '', trim: true },
+  intensity: { type: String, default: '', trim: true }
+}, { _id: false });
+
 const dietPlanSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -89,6 +105,23 @@ const dietPlanSchema = new mongoose.Schema({
     snacks: { type: String, default: '' },
     calories: { type: Number, default: 0 },
     water: { type: Number, default: 0 }
+  },
+  aiSummary: {
+    type: aiSummarySchema,
+    default: () => ({})
+  },
+  exercisePlan: {
+    type: [exercisePlanSchema],
+    default: []
+  },
+  healthSafetyNotes: {
+    type: [String],
+    default: []
+  },
+  disclaimer: {
+    type: String,
+    default: '',
+    trim: true
   },
   source: {
     type: String,
