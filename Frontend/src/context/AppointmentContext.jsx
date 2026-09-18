@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { mockDoctors, mockNurses, mockActivities } from '../data/mockData';
 import { appointmentService } from '../services/appointmentService';
 import { useAuth } from '../hooks/useAuth';
 import { NotificationContext } from './NotificationContext';
@@ -127,14 +126,6 @@ export const AppointmentProvider = ({ children }) => {
       if (res?.success && res.appointment) {
         const newAppointment = res.appointment;
         setAppointments((prev) => [newAppointment, ...prev.filter((a) => a._id !== newAppointment._id)]);
-
-        // Log system activity
-        mockActivities.unshift({
-          id: Date.now(),
-          text: `Appointment request ${newAppointment.id} sent to ${newAppointment.providerName}`,
-          time: 'Just now',
-          type: 'success',
-        });
 
         // Notify User
         if (addNotification) {

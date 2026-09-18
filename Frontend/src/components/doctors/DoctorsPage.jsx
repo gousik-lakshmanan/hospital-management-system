@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Stethoscope, Plus, HelpCircle, Activity, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { mockDoctors } from '../../data/mockData';
 import { userService } from '../../services/userService';
 import Card from '../common/Card';
 import Table from '../common/Table';
@@ -9,7 +8,7 @@ import Badge from '../common/Badge';
 import Modal from '../common/Modal';
 
 export const DoctorsPage = () => {
-  const [doctors, setDoctors] = useState(mockDoctors);
+  const [doctors, setDoctors] = useState([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -27,13 +26,16 @@ export const DoctorsPage = () => {
   const [successMsg, setSuccessMsg] = useState('');
 
   const fetchDoctors = useCallback(async () => {
+    setLoading(true);
     try {
       const res = await userService.getDoctors();
-      if (res?.success && Array.isArray(res.doctors) && res.doctors.length > 0) {
+      if (res?.success && Array.isArray(res.doctors)) {
         setDoctors(res.doctors);
       }
     } catch (err) {
-      console.warn('Could not fetch doctors from API, using fallback list', err.message);
+      console.warn('Could not fetch doctors from API:', err.message);
+    } finally {
+      setLoading(false);
     }
   }, []);
 

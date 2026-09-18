@@ -50,7 +50,7 @@ export const AIReportSummarizer = () => {
     fetchSummaries();
   }, []);
 
-  const mockReportsList = [
+  const sampleReportsList = [
     { value: 'cbc', label: 'Complete Blood Count (CBC) - Aarav Sharma' },
     { value: 'lipid', label: 'Lipid Profile - Vikram Malhotra' },
     { value: 'urine', label: 'Urinalysis Report - Ananya Iyer' }
@@ -109,7 +109,7 @@ export const AIReportSummarizer = () => {
               <span>{error}</span>
             </div>
           )}
-          <Card title="Select Clinical Report" subtitle="Upload or choose mock hospital logs" className="h-fit">
+          <Card title="Select Clinical Report" subtitle="Upload or choose clinical report logs" className="h-fit">
           <form onSubmit={handleSummarize} className="space-y-4">
             <div>
               <label className="block text-[10px] text-slate-500 font-semibold uppercase">Report Record</label>
@@ -120,7 +120,7 @@ export const AIReportSummarizer = () => {
                 required
               >
                 <option value="">-- Choose Report Document --</option>
-                {mockReportsList.map((r, idx) => (
+                {sampleReportsList.map((r, idx) => (
                   <option key={idx} value={r.value}>{r.label}</option>
                 ))}
               </select>

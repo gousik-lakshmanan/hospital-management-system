@@ -15,10 +15,14 @@ router.use(authenticate);
 
 // Admin-Only Practitioner Creation Endpoints
 router.post('/doctors', authorize('admin'), createDoctor);
+router.post('/doctor', authorize('admin'), createDoctor);
 router.post('/nurses', authorize('admin'), createNurse);
+router.post('/nurse', authorize('admin'), createNurse);
 
 // Practitioner Directory Endpoints
 router.get('/doctors', getDoctors);
+router.get('/doctor', getDoctors);
 router.get('/nurses', getNurses);
+router.get('/nurse', getNurses);
 
 export default router;

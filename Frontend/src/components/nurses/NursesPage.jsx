@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { HeartHandshake, Plus, Clock, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { mockNurses } from '../../data/mockData';
 import { userService } from '../../services/userService';
 import Card from '../common/Card';
 import Table from '../common/Table';
@@ -9,7 +8,7 @@ import Badge from '../common/Badge';
 import Modal from '../common/Modal';
 
 export const NursesPage = () => {
-  const [nurses, setNurses] = useState(mockNurses);
+  const [nurses, setNurses] = useState([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -27,13 +26,16 @@ export const NursesPage = () => {
   const [successMsg, setSuccessMsg] = useState('');
 
   const fetchNurses = useCallback(async () => {
+    setLoading(true);
     try {
       const res = await userService.getNurses();
-      if (res?.success && Array.isArray(res.nurses) && res.nurses.length > 0) {
+      if (res?.success && Array.isArray(res.nurses)) {
         setNurses(res.nurses);
       }
     } catch (err) {
-      console.warn('Could not fetch nurses from API, using fallback list', err.message);
+      console.warn('Could not fetch nurses from API:', err.message);
+    } finally {
+      setLoading(false);
     }
   }, []);
 
