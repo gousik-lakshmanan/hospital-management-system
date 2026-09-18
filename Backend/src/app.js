@@ -18,6 +18,7 @@ import billingRoutes from './routes/billingRoutes.js';
 import dietPlanRoutes from './routes/dietPlanRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import reportRoutes from './routes/reportRoutes.js';
+import reportSummaryRoutes from './routes/reportSummaryRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
 import { notFound, errorHandler } from './middleware/errorMiddleware.js';
 
@@ -67,8 +68,8 @@ app.use('/api/billing', billingRoutes);
 app.use('/api/diet-plans', dietPlanRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/report-summaries', reportSummaryRoutes);
 app.use('/api/dashboard', dashboardRoutes);
-
 
 // Error Handling Middleware
 app.use(notFound);
