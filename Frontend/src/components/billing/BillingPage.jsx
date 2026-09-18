@@ -27,6 +27,7 @@ export const BillingPage = () => {
   const [isAddBillOpen, setIsAddBillOpen] = useState(false);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [actionLoadingId, setActionLoadingId] = useState(null);
 
   // New Bill Form
   const [billPatientId, setBillPatientId] = useState('');
@@ -63,6 +64,7 @@ export const BillingPage = () => {
 
   const handleCreateBill = async (e) => {
     e.preventDefault();
+    if (submitting) return;
     if (!billPatientId) return;
 
     const items = [];
@@ -116,6 +118,7 @@ export const BillingPage = () => {
 
   const handleRecordPayment = async (e) => {
     e.preventDefault();
+    if (submitting) return;
     if (!selectedInvoice || !paymentAmount) return;
 
     try {
@@ -133,6 +136,16 @@ export const BillingPage = () => {
       // Error handled in context
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleCancelBill = async (id) => {
+    if (actionLoadingId) return;
+    try {
+      setActionLoadingId(id);
+      await cancelBill(id);
+    } finally {
+      setActionLoadingId(null);
     }
   };
 

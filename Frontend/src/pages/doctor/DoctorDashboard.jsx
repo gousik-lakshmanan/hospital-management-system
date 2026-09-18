@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Calendar, Users, ClipboardList, CheckSquare, AlertCircle, Plus, Eye, Stethoscope, Pill, Check, Clock, X, RotateCcw, CheckCircle2 } from 'lucide-react';
 import Card from '../../components/common/Card';
 import Badge from '../../components/common/Badge';
 import Button from '../../components/common/Button';
 import Modal from '../../components/common/Modal';
-import { mockPatients, patientService } from '../../data/mockData';
+import { patientService } from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
 import { useAppointments } from '../../context/AppointmentContext';
 import { usePharmacy } from '../../context/PharmacyContext';
@@ -21,7 +21,21 @@ export const DoctorDashboard = () => {
   const pendingRequests = doctorAppointments.filter((a) => a.status === 'Pending');
   const activeQueue = doctorAppointments.filter((a) => a.status === 'Confirmed' || a.status === 'Rescheduled');
 
-  const [patients, setPatients] = useState(mockPatients);
+  const [patients, setPatients] = useState([]);
+
+  useEffect(() => {
+    const loadPatients = async () => {
+      try {
+        const res = await patientService.getAllPatients();
+        if (res?.success && Array.isArray(res.data)) {
+          setPatients(res.data);
+        }
+      } catch (err) {
+        console.error('Failed to load patients for doctor dashboard:', err);
+      }
+    };
+    loadPatients();
+  }, []);
   
   // Consultation form states
   const [isConsultModalOpen, setIsConsultModalOpen] = useState(false);

@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import BloodStock, { ALLOWED_BLOOD_GROUPS } from '../models/BloodStock.js';
 import BloodDonor from '../models/BloodDonor.js';
+import { notifyRoles } from '../services/notificationService.js';
 
 // Helper to calculate status consistent with frontend design
 export const calculateStockStatus = (units) => {
@@ -133,6 +134,21 @@ export const updateBloodStock = async (req, res) => {
         }
 
         const status = calculateStockStatus(updated.units);
+
+        // Check if transition to critical shortage occurred
+        const prevUnits = updated.units - parsedDelta; // parsedDelta is negative
+        if (prevUnits > 2 && updated.units <= 2) {
+          notifyRoles(['admin'], {
+            title: 'Critical Blood Shortage',
+            message: `Blood group ${cleanGroup} is at critical level (${updated.units} units remaining).`,
+            type: 'blood_bank',
+            priority: 'urgent',
+            link: '/admin/blood-bank',
+            metadata: { bloodGroup: cleanGroup, units: updated.units },
+            dedupeKey: `blood-crit-${cleanGroup}-${updated.units}`
+          });
+        }
+
         return res.status(200).json({
           success: true,
           message: `Blood stock for ${cleanGroup} adjusted successfully.`,

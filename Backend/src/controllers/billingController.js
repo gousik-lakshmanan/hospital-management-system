@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import Bill from '../models/Bill.js';
 import Patient from '../models/Patient.js';
+import { createNotification } from '../services/notificationService.js';
 
 // Helper to generate unique invoiceNumber
 const generateUniqueInvoiceNumber = async () => {
@@ -336,6 +337,19 @@ export const createBill = async (req, res) => {
       createdByName: req.user.name || 'Staff Member'
     });
 
+    if (patient.userId) {
+      createNotification({
+        recipient: patient.userId,
+        title: 'New Invoice Generated',
+        message: `Invoice #${newBill.invoiceNumber} generated for $${newBill.totalAmount}.`,
+        type: 'billing',
+        priority: 'normal',
+        link: '/patient/billing',
+        metadata: { billId: newBill._id, invoiceNumber: newBill.invoiceNumber },
+        dedupeKey: `bill-create-${newBill._id}`
+      });
+    }
+
     return res.status(201).json({
       success: true,
       message: 'Billing invoice created successfully.',
@@ -436,6 +450,23 @@ export const recordPayment = async (req, res) => {
         message: 'Concurrent modification conflict: Invoice balance or status changed during processing.'
       });
     }
+
+    // Non-blocking notification to patient
+    try {
+      const patientDoc = await Patient.findById(updated.patientId);
+      if (patientDoc && patientDoc.userId) {
+        createNotification({
+          recipient: patientDoc.userId,
+          title: 'Payment Recorded',
+          message: `Payment of $${paymentAmount} received for invoice #${updated.invoiceNumber}. New status: ${updated.paymentStatus}.`,
+          type: 'billing',
+          priority: 'normal',
+          link: '/patient/billing',
+          metadata: { billId: updated._id, invoiceNumber: updated.invoiceNumber },
+          dedupeKey: `bill-pay-${updated._id}-${updated.amountPaid}`
+        });
+      }
+    } catch (nErr) {}
 
     return res.status(200).json({
       success: true,

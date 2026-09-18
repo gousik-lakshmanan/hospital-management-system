@@ -1,8 +1,9 @@
-﻿import mongoose from 'mongoose';
+import mongoose from 'mongoose';
 import Prescription from '../models/Prescription.js';
 import Medicine from '../models/Medicine.js';
 import User from '../models/User.js';
 import Patient from '../models/Patient.js';
+import { createNotification, notifyRoles } from '../services/notificationService.js';
 
 // POST /api/prescriptions - Doctor/Admin creates a new prescription (Status: Pending, No stock deducted)
 export const createPrescription = async (req, res) => {
@@ -123,6 +124,27 @@ export const createPrescription = async (req, res) => {
     } catch (syncErr) {
       console.error('Non-critical sync error to Patient document:', syncErr.message);
     }
+
+    // Non-blocking notification hooks
+    createNotification({
+      recipient: patientUser._id,
+      title: 'New Prescription Issued',
+      message: `Dr. ${prescribedByName} issued a new prescription for you (${validatedMedicines.length} medicine(s)).`,
+      type: 'prescription',
+      priority: 'normal',
+      link: '/patient/prescriptions',
+      metadata: { prescriptionId: newPrescription._id },
+      dedupeKey: `rx-create-${newPrescription._id}`
+    });
+    notifyRoles(['pharmacist', 'admin'], {
+      title: 'New Prescription Pending',
+      message: `New prescription issued for patient ${patientName} (${validatedMedicines.length} item(s)).`,
+      type: 'prescription',
+      priority: 'normal',
+      link: '/pharmacist/prescriptions',
+      metadata: { prescriptionId: newPrescription._id },
+      dedupeKey: `rx-create-staff-${newPrescription._id}`
+    });
 
     return res.status(201).json({
       success: true,
@@ -374,6 +396,30 @@ export const dispensePrescription = async (req, res) => {
       }
     } catch (syncErr) {
       console.error('Non-critical sync error to Patient document:', syncErr.message);
+    }
+
+    // Non-blocking notification hooks
+    createNotification({
+      recipient: updatedPrescription.patientId,
+      title: 'Prescription Dispensed',
+      message: `Your prescription has been dispensed by pharmacy (${dispensedByName}).`,
+      type: 'prescription',
+      priority: 'normal',
+      link: '/patient/prescriptions',
+      metadata: { prescriptionId: updatedPrescription._id },
+      dedupeKey: `rx-dispense-${updatedPrescription._id}`
+    });
+    if (updatedPrescription.prescribedBy) {
+      createNotification({
+        recipient: updatedPrescription.prescribedBy,
+        title: 'Prescription Dispensed',
+        message: `Prescription for patient ${updatedPrescription.patientName} was dispensed by pharmacy.`,
+        type: 'prescription',
+        priority: 'normal',
+        link: '/doctor/prescriptions',
+        metadata: { prescriptionId: updatedPrescription._id },
+        dedupeKey: `rx-dispense-doc-${updatedPrescription._id}`
+      });
     }
 
     return res.status(200).json({

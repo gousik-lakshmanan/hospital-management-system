@@ -2,11 +2,6 @@ import dotenv from 'dotenv';
 import connectDB from './config/db.js';
 import app from './app.js';
 
-import { seedRoomsAndBeds } from './seeds/roomBedSeed.js';
-import { seedPharmacy } from './seeds/pharmacySeed.js';
-import { seedBloodBank } from './seeds/bloodBankSeed.js';
-import { seedStage7 } from './seeds/stage7Seed.js';
-
 // 1. Load environment variables
 dotenv.config();
 
@@ -18,10 +13,6 @@ let server;
 const startServer = async () => {
   try {
     await connectDB();
-    await seedRoomsAndBeds();
-    await seedPharmacy();
-    await seedBloodBank();
-    await seedStage7();
 
     server = app.listen(PORT, () => {
 

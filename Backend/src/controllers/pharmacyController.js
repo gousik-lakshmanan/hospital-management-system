@@ -1,4 +1,5 @@
-﻿import Medicine from '../models/Medicine.js';
+import Medicine from '../models/Medicine.js';
+import { notifyRoles } from '../services/notificationService.js';
 
 // GET /api/pharmacy/medicines - List active medicines with filtering & search
 export const getMedicines = async (req, res) => {
@@ -306,6 +307,21 @@ export const adjustStock = async (req, res) => {
         success: false,
         message: 'Insufficient medicine stock available.',
       });
+    }
+
+    if (delta < 0) {
+      const prevQty = updatedMedicine.quantity - delta; // delta is negative so this equals prevQty
+      if (prevQty > updatedMedicine.reorderLevel && updatedMedicine.quantity <= updatedMedicine.reorderLevel) {
+        notifyRoles(['pharmacist', 'admin'], {
+          title: 'Low Stock Alert',
+          message: `Medicine '${updatedMedicine.name}' is running low (${updatedMedicine.quantity} remaining, reorder level: ${updatedMedicine.reorderLevel}).`,
+          type: 'pharmacy',
+          priority: 'high',
+          link: '/pharmacist/inventory',
+          metadata: { medicineId: updatedMedicine._id },
+          dedupeKey: `med-low-${updatedMedicine._id}-${updatedMedicine.quantity}`
+        });
+      }
     }
 
     return res.status(200).json({

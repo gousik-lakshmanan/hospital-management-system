@@ -3,6 +3,11 @@ import mongoose from 'mongoose';
 import connectDB from './src/config/db.js';
 import User from './src/models/User.js';
 import Patient from './src/models/Patient.js';
+import { seedRoomsAndBeds } from './src/seeds/roomBedSeed.js';
+import { seedPharmacy } from './src/seeds/pharmacySeed.js';
+import { seedBloodBank } from './src/seeds/bloodBankSeed.js';
+import { seedStage7 } from './src/seeds/stage7Seed.js';
+import { seedStage8 } from './src/seeds/stage8Seed.js';
 
 dotenv.config();
 
@@ -240,6 +245,15 @@ const seedDatabase = async () => {
     }
 
     console.log('--- Documentation Credentials Seed Completed Successfully ---');
+
+    console.log('--- Running Modular Stage Seeds ---');
+    await seedRoomsAndBeds();
+    await seedPharmacy();
+    await seedBloodBank();
+    await seedStage7();
+    await seedStage8();
+    console.log('--- All System Seeds Completed Successfully ---');
+
     await mongoose.connection.close();
     process.exit(0);
   } catch (error) {

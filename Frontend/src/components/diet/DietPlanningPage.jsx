@@ -43,6 +43,7 @@ export const DietPlanningPage = () => {
 
   const handleCreate = async (e) => {
     e.preventDefault();
+    if (submitting) return;
     if (!patId || !breakfast.trim() || !lunch.trim() || !dinner.trim()) return;
 
     try {

@@ -16,6 +16,9 @@ import bloodRequestRoutes from './routes/bloodRequestRoutes.js';
 import visitorRoutes from './routes/visitorRoutes.js';
 import billingRoutes from './routes/billingRoutes.js';
 import dietPlanRoutes from './routes/dietPlanRoutes.js';
+import notificationRoutes from './routes/notificationRoutes.js';
+import reportRoutes from './routes/reportRoutes.js';
+import dashboardRoutes from './routes/dashboardRoutes.js';
 import { notFound, errorHandler } from './middleware/errorMiddleware.js';
 
 const app = express();
@@ -62,6 +65,9 @@ app.use('/api/blood-requests', bloodRequestRoutes);
 app.use('/api/visitors', visitorRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/diet-plans', dietPlanRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 
 // Error Handling Middleware

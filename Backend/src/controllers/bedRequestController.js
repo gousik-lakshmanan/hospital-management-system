@@ -1,8 +1,9 @@
-﻿import mongoose from 'mongoose';
+import mongoose from 'mongoose';
 import BedRequest from '../models/BedRequest.js';
 import Bed from '../models/Bed.js';
 import Room from '../models/Room.js';
 import Patient from '../models/Patient.js';
+import notificationService from '../services/notificationService.js';
 
 // POST /api/bed-requests - Patient submits a bed request for a section
 export const createBedRequest = async (req, res) => {
@@ -72,6 +73,17 @@ export const createBedRequest = async (req, res) => {
 
     await newBedRequest.save();
 
+    // Notify administrators of new bed request
+    await notificationService.notifyRole('admin', {
+      type: 'BED_REQUEST',
+      title: 'New Bed Request',
+      message: `New bed request submitted by ${requesterName} for section ${room.roomName}.`,
+      entityType: 'BedRequest',
+      entityId: newBedRequest._id,
+      priority: 'HIGH',
+      dedupeKey: `bed-req-${newBedRequest._id}`
+    });
+
     return res.status(201).json({
       success: true,
       message: `Bed request for ${room.roomName} submitted successfully`,
@@ -125,26 +137,26 @@ export const getAllBedRequests = async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: 'Failed to fetch bed requests',
+      message: 'Failed to fetch all bed requests',
       error: error.message,
     });
   }
 };
 
-// PATCH /api/bed-requests/:id/approve - Admin approves a bed request with concurrency safety
+// PATCH /api/bed-requests/:id/approve - Admin approves a bed request
 export const approveBedRequest = async (req, res) => {
-  const { id: requestId } = req.params;
-  const { bedId } = req.body;
-
-  if (!bedId) {
-    return res.status(400).json({
-      success: false,
-      message: 'Bed ID is required to approve the request',
-    });
-  }
-
   try {
-    // 1. Check if request exists and is pending
+    const { id: requestId } = req.params;
+    const { bedId } = req.body;
+
+    if (!bedId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Bed ID is required for approval',
+      });
+    }
+
+    // 1. Fetch the bed request
     const initialRequest = await BedRequest.findById(requestId);
     if (!initialRequest) {
       return res.status(404).json({
@@ -224,6 +236,19 @@ export const approveBedRequest = async (req, res) => {
       { status: 'Admitted', room: `${claimedBed.roomName} - ${claimedBed.bedNumber}` }
     );
 
+    // Notify patient of approved bed request
+    await notificationService.createNotification({
+      recipientId: initialRequest.requesterId,
+      recipientRole: 'patient',
+      type: 'BED_REQUEST',
+      title: 'Bed Request Approved',
+      message: `Your bed request has been approved. Allocated bed: ${claimedBed.bedNumber} in ${claimedBed.roomName}.`,
+      entityType: 'BedRequest',
+      entityId: updatedRequest._id,
+      priority: 'HIGH',
+      dedupeKey: `bed-appr-${updatedRequest._id}`
+    });
+
     return res.status(200).json({
       success: true,
       message: `Bed request approved. Assigned Bed ${claimedBed.bedNumber} to ${initialRequest.requesterName}.`,
@@ -278,6 +303,19 @@ export const rejectBedRequest = async (req, res) => {
         message: 'Bed request is no longer pending.',
       });
     }
+
+    // Notify patient of rejected bed request
+    await notificationService.createNotification({
+      recipientId: request.requesterId,
+      recipientRole: 'patient',
+      type: 'BED_REQUEST',
+      title: 'Bed Request Declined',
+      message: `Your bed request for ${request.sectionName} was declined.`,
+      entityType: 'BedRequest',
+      entityId: updatedRequest._id,
+      priority: 'NORMAL',
+      dedupeKey: `bed-rej-${updatedRequest._id}`
+    });
 
     return res.status(200).json({
       success: true,

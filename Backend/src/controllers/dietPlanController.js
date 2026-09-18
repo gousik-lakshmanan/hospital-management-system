@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import DietPlan from '../models/DietPlan.js';
 import Patient from '../models/Patient.js';
 import { generateDietPlanWithAI } from '../services/aiDietPlannerService.js';
+import { createNotification } from '../services/notificationService.js';
 
 const getDayName = () => {
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -105,6 +106,19 @@ export const createDietPlan = async (req, res) => {
       assignedByName: req.user.role !== 'patient' ? req.user.name : '',
       isActive: true
     });
+
+    if (req.user.role !== 'patient' && targetUserId) {
+      createNotification({
+        recipient: targetUserId,
+        title: 'New Diet Plan Assigned',
+        message: `A personalized recovery diet plan was assigned by ${req.user.name || 'Medical Staff'}.`,
+        type: 'diet_plan',
+        priority: 'normal',
+        link: '/patient/diet-plan',
+        metadata: { planId: newDietPlan._id },
+        dedupeKey: `diet-assign-${newDietPlan._id}`
+      });
+    }
 
     return res.status(201).json({
       success: true,

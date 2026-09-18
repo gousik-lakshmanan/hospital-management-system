@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Users, CheckSquare, Heart, Clock, AlertTriangle, PenTool, Activity, FileText, CheckCircle2, Calendar, ClipboardList, AlertCircle, RotateCcw, Check, X } from 'lucide-react';
 import Card from '../../components/common/Card';
 import Badge from '../../components/common/Badge';
 import Button from '../../components/common/Button';
 import Modal from '../../components/common/Modal';
-import { mockPatients, patientService } from '../../data/mockData';
+import { patientService } from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
 import { useAppointments } from '../../context/AppointmentContext';
 
@@ -17,7 +17,22 @@ export const NurseDashboard = () => {
   const pendingRequests = nurseAppointments.filter((a) => a.status === 'Pending');
   const activeQueue = nurseAppointments.filter((a) => a.status === 'Confirmed' || a.status === 'Rescheduled');
 
-  const [patients, setPatients] = useState(mockPatients);
+  const [patients, setPatients] = useState([]);
+
+  const loadPatients = async () => {
+    try {
+      const res = await patientService.getPatients();
+      if (res?.success && Array.isArray(res.data)) {
+        setPatients(res.data);
+      }
+    } catch (err) {
+      console.error('Failed to load patients for nurse dashboard:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadPatients();
+  }, []);
   
   // Reschedule Modal state
   const [rescheduleModalAppt, setRescheduleModalAppt] = useState(null);
@@ -122,7 +137,7 @@ export const NurseDashboard = () => {
     }
   };
 
-  const handleSaveVitals = (e) => {
+  const handleSaveVitals = async (e) => {
     e.preventDefault();
     if (!selectedPatientId || !temp || !bp || !heartRate || !spo2) return;
 
@@ -133,27 +148,26 @@ export const NurseDashboard = () => {
       spo2: `${spo2}%`
     };
 
-    patientService.updateVitals(selectedPatientId, formattedVitals);
-    setPatients([...mockPatients]);
+    try {
+      await patientService.updateVitals(selectedPatientId, formattedVitals);
+      await loadPatients();
+    } catch (err) {
+      console.error('Failed to update vitals:', err);
+    }
     setIsVitalsModalOpen(false);
   };
 
   const handleOpenNotes = (patientId) => {
     setSelectedPatientId(patientId);
-    const pat = patients.find(p => p.id === patientId);
+    const pat = patients.find(p => (p.id === patientId || p._id === patientId));
     setNoteText(pat?.nursingNotes || '');
     setIsNoteModalOpen(true);
   };
 
-  const handleSaveNotes = (e) => {
+  const handleSaveNotes = async (e) => {
     e.preventDefault();
-    const pat = mockPatients.find(p => p.id === selectedPatientId);
-    if (pat) {
-      pat.nursingNotes = noteText;
-      setPatients([...mockPatients]);
-      setIsNoteModalOpen(false);
-      setNoteText('');
-    }
+    setIsNoteModalOpen(false);
+    setNoteText('');
   };
 
   return (

@@ -1,21 +1,27 @@
-import React, { useState } from 'react';
-import { Calendar, Users, Home, ClipboardPlus, UserCheck, AlertCircle, Plus, Eye, DollarSign } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Calendar, Users, Home, UserCheck, Plus } from 'lucide-react';
 import Card from '../../components/common/Card';
 import Badge from '../../components/common/Badge';
 import Button from '../../components/common/Button';
 import Modal from '../../components/common/Modal';
-import { mockAppointments, mockPatients, mockVisitors, appointmentService, visitorService, mockDoctors } from '../../data/mockData';
+import { useAppointments } from '../../context/AppointmentContext';
+import { useVisitors } from '../../context/VisitorContext';
 import { useRooms } from '../../context/RoomContext';
+import { patientService, appointmentService } from '../../services/api';
 
 export const ReceptionistDashboard = () => {
   const { availableBeds, totalBeds } = useRooms();
-  const [appointments, setAppointments] = useState(mockAppointments);
-  const [patients, setPatients] = useState(mockPatients);
-  const [visitors, setVisitors] = useState(mockVisitors);
+  const { appointments, bookAppointment, refreshAppointments } = useAppointments();
+  const { visitors, createVisitor, checkOutVisitor, refreshVisitors } = useVisitors();
+
+  const [patients, setPatients] = useState([]);
+  const [doctors, setDoctors] = useState([]);
 
   // Modal open states
   const [isAppModalOpen, setIsAppModalOpen] = useState(false);
   const [isVisModalOpen, setIsVisModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [actionLoadingId, setActionLoadingId] = useState(null);
 
   // New Appointment Form
   const [appPatientId, setAppPatientId] = useState('');
@@ -27,59 +33,113 @@ export const ReceptionistDashboard = () => {
   // New Visitor Form
   const [visName, setVisName] = useState('');
   const [visPhone, setVisPhone] = useState('');
-  const [visPatient, setVisPatient] = useState('');
+  const [visPatientId, setVisPatientId] = useState('');
+  const [visRelationship, setVisRelationship] = useState('Family');
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [patRes, provRes] = await Promise.all([
+          patientService.getPatients(),
+          appointmentService.getProviders()
+        ]);
+        if (patRes?.success && Array.isArray(patRes.data)) {
+          setPatients(patRes.data);
+        }
+        if (provRes?.success && provRes.data) {
+          setDoctors(provRes.data.doctors || []);
+        }
+      } catch (err) {
+        console.error('Failed to load receptionist dashboard data:', err);
+      }
+    };
+    loadData();
+    refreshAppointments?.();
+    refreshVisitors?.();
+  }, [refreshAppointments, refreshVisitors]);
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const todayAppointments = appointments.filter(a => a.date === todayStr);
 
   const stats = [
-    { label: "Today's Appointments", value: appointments.filter(a => a.date === '2026-08-27').length.toString(), icon: Calendar, color: 'text-blue-600 bg-blue-50' },
-    { label: 'Registered Patients', value: patients.length.toString(), icon: Users, color: 'text-indigo-600 bg-indigo-50' },
+    { label: "Today's Appointments", value: String(todayAppointments.length), icon: Calendar, color: 'text-blue-600 bg-blue-50' },
+    { label: 'Registered Patients', value: String(patients.length), icon: Users, color: 'text-indigo-600 bg-indigo-50' },
     { label: 'Available Bed Spaces', value: `${availableBeds} / ${totalBeds}`, icon: Home, color: 'text-emerald-600 bg-emerald-50' },
-    { label: 'Active Visitors', value: visitors.filter(v => v.status === 'Checked In').length.toString(), icon: UserCheck, color: 'text-teal-600 bg-teal-50' }
+    { label: 'Active Visitors', value: String(visitors.filter(v => v.status === 'Checked In').length), icon: UserCheck, color: 'text-teal-600 bg-teal-50' }
   ];
 
-  const handleBookAppointment = (e) => {
+  const handleBookAppointment = async (e) => {
     e.preventDefault();
-    if (!appPatientId || !appDoctorId || !appDate || !appTime) return;
+    if (!appPatientId || !appDoctorId || !appDate || !appTime || isSubmitting) return;
 
-    appointmentService.create({
-      patientId: appPatientId,
-      doctorId: appDoctorId,
-      date: appDate,
-      time: appTime,
-      department: appDept
-    });
+    setIsSubmitting(true);
+    try {
+      const selectedDoc = doctors.find(d => d._id === appDoctorId || d.id === appDoctorId);
+      const selectedPat = patients.find(p => p._id === appPatientId || p.id === appPatientId);
 
-    setAppointments([...mockAppointments]);
-    setIsAppModalOpen(false);
-    
-    // Clear form
-    setAppPatientId('');
-    setAppDoctorId('');
-    setAppDate('');
-    setAppTime('');
+      await bookAppointment({
+        patientId: appPatientId,
+        patientName: selectedPat?.name || 'Patient',
+        doctorId: appDoctorId,
+        doctorName: selectedDoc?.name || 'Doctor',
+        department: selectedDoc?.department || appDept,
+        type: 'doctor',
+        date: appDate,
+        time: appTime,
+        reason: 'Scheduled Consultation'
+      });
+
+      setIsAppModalOpen(false);
+      setAppPatientId('');
+      setAppDoctorId('');
+      setAppDate('');
+      setAppTime('');
+      refreshAppointments?.();
+    } catch (err) {
+      console.error('Failed to book appointment:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleRegisterVisitor = (e) => {
+  const handleRegisterVisitor = async (e) => {
     e.preventDefault();
-    if (!visName || !visPhone || !visPatient) return;
+    if (!visName || !visPhone || !visPatientId || isSubmitting) return;
 
-    visitorService.create({
-      visitorName: visName,
-      phone: visPhone,
-      patientName: visPatient
-    });
+    setIsSubmitting(true);
+    try {
+      const selectedPat = patients.find(p => p._id === visPatientId || p.id === visPatientId);
+      await createVisitor({
+        visitorName: visName,
+        phone: visPhone,
+        patientId: visPatientId,
+        relationship: visRelationship || 'Family',
+        patientRoom: selectedPat?.room || 'General Ward'
+      });
 
-    setVisitors([...mockVisitors]);
-    setIsVisModalOpen(false);
-
-    // Clear form
-    setVisName('');
-    setVisPhone('');
-    setVisPatient('');
+      setIsVisModalOpen(false);
+      setVisName('');
+      setVisPhone('');
+      setVisPatientId('');
+      refreshVisitors?.();
+    } catch (err) {
+      console.error('Failed to register visitor:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleCheckOutVisitor = (id) => {
-    visitorService.checkOut(id);
-    setVisitors([...mockVisitors]);
+  const handleCheckOut = async (id) => {
+    if (actionLoadingId) return;
+    try {
+      setActionLoadingId(id);
+      await checkOutVisitor(id);
+      refreshVisitors?.();
+    } catch (err) {
+      console.error('Failed to check out visitor:', err);
+    } finally {
+      setActionLoadingId(null);
+    }
   };
 
   return (
@@ -89,7 +149,7 @@ export const ReceptionistDashboard = () => {
         <div>
           <span className="text-xs text-blue-600 font-semibold tracking-wide uppercase">Front Desk Operations</span>
           <h2 className="text-xl font-bold text-slate-800 mt-1">Hello, Receptionist Sarah</h2>
-          <p className="text-xs text-slate-500 mt-0.5">Central Reception Hall A | Facilitating patient and visitor logs</p>
+          <p className="text-xs text-slate-500 mt-0.5">Central Reception Hall A | Facilitating live patient and visitor logs</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <Button variant="primary" icon={Plus} onClick={() => setIsAppModalOpen(true)}>
@@ -127,23 +187,31 @@ export const ReceptionistDashboard = () => {
                   <tr className="bg-slate-50 text-slate-500 border-b border-slate-100 font-bold">
                     <th className="p-3">Appt ID</th>
                     <th className="p-3">Patient</th>
-                    <th className="p-3">Doctor</th>
+                    <th className="p-3">Doctor / Staff</th>
                     <th className="p-3">Time</th>
                     <th className="p-3">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {appointments.slice(0, 6).map((app) => (
-                    <tr key={app.id} className="hover:bg-slate-50/50">
-                      <td className="p-3 font-semibold text-slate-700">{app.id}</td>
-                      <td className="p-3 text-slate-600 font-medium">{app.patientName}</td>
-                      <td className="p-3 text-slate-500">{app.doctorName} ({app.department})</td>
-                      <td className="p-3 text-slate-500">{app.time}</td>
-                      <td className="p-3">
-                        <Badge>{app.status}</Badge>
+                  {appointments.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" className="p-6 text-center text-slate-400">
+                        No appointments found.
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    appointments.slice(0, 8).map((app) => (
+                      <tr key={app._id || app.id} className="hover:bg-slate-50/50">
+                        <td className="p-3 font-semibold text-slate-700">{app.id || `APPT-${(app._id || '').slice(-4)}`}</td>
+                        <td className="p-3 text-slate-600 font-medium">{app.patientName}</td>
+                        <td className="p-3 text-slate-500">{app.doctorName || app.nurseName} ({app.department || 'General'})</td>
+                        <td className="p-3 text-slate-500">{app.time}</td>
+                        <td className="p-3">
+                          <Badge>{app.status}</Badge>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -154,24 +222,37 @@ export const ReceptionistDashboard = () => {
         <div className="space-y-6">
           <Card title="Visitor Passes" subtitle="Active hospital visitation passes">
             <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
-              {visitors.map((v) => (
-                <div key={v.id} className="p-3 border border-slate-200 rounded-xl flex items-center justify-between hover:bg-slate-50 transition-colors">
-                  <div>
-                    <h5 className="font-semibold text-xs text-slate-800">{v.visitorName}</h5>
-                    <span className="text-[9px] text-slate-400 block mt-0.5">Visiting: {v.patientName}</span>
-                    <span className="text-[9px] text-slate-500 font-semibold mt-0.5 block">{v.passId}</span>
-                  </div>
-                  <div className="text-right">
-                    {v.status === 'Checked In' ? (
-                      <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => handleCheckOutVisitor(v.id)}>
-                        Check Out
-                      </Button>
-                    ) : (
-                      <Badge className="bg-slate-50 text-slate-500">Left</Badge>
-                    )}
-                  </div>
+              {visitors.length === 0 ? (
+                <div className="p-6 text-center text-slate-400 text-xs">
+                  No active visitor passes on record.
                 </div>
-              ))}
+              ) : (
+                visitors.map((v) => (
+                  <div key={v._id || v.id} className="p-3 border border-slate-200 rounded-xl flex items-center justify-between hover:bg-slate-50 transition-colors">
+                    <div>
+                      <h5 className="font-semibold text-xs text-slate-800">{v.visitorName}</h5>
+                      <span className="text-[9px] text-slate-400 block mt-0.5">Visiting: {v.patientName}</span>
+                      <span className="text-[9px] text-slate-500 font-semibold mt-0.5 block">{v.passId}</span>
+                    </div>
+                    <div className="text-right">
+                      {v.status === 'Checked In' ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          loading={actionLoadingId === (v._id || v.id)}
+                          disabled={!!actionLoadingId}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          onClick={() => handleCheckOut(v._id || v.id)}
+                        >
+                          Check Out
+                        </Button>
+                      ) : (
+                        <Badge className="bg-slate-50 text-slate-500">{v.status}</Badge>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </Card>
         </div>
@@ -185,7 +266,9 @@ export const ReceptionistDashboard = () => {
         footer={
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setIsAppModalOpen(false)}>Cancel</Button>
-            <Button variant="primary" onClick={handleBookAppointment}>Book Slots</Button>
+            <Button variant="primary" onClick={handleBookAppointment} disabled={isSubmitting}>
+              {isSubmitting ? 'Booking...' : 'Book Slots'}
+            </Button>
           </div>
         }
       >
@@ -201,7 +284,7 @@ export const ReceptionistDashboard = () => {
               >
                 <option value="">-- Choose Patient --</option>
                 {patients.map(p => (
-                  <option key={p.id} value={p.id}>{p.name} ({p.id})</option>
+                  <option key={p._id || p.id} value={p._id || p.id}>{p.name}</option>
                 ))}
               </select>
             </div>
@@ -215,8 +298,8 @@ export const ReceptionistDashboard = () => {
                 required
               >
                 <option value="">-- Choose Practitioner --</option>
-                {mockDoctors.map(d => (
-                  <option key={d.id} value={d.id}>{d.name} ({d.specialty})</option>
+                {doctors.map(d => (
+                  <option key={d._id || d.id} value={d._id || d.id}>{d.name} ({d.department || 'Specialist'})</option>
                 ))}
               </select>
             </div>
@@ -252,10 +335,10 @@ export const ReceptionistDashboard = () => {
                 className="mt-1 w-full p-2 border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none rounded-lg text-sm"
               >
                 <option value="Cardiology">Cardiology</option>
-                <option value="Pediatrics">Pediatrics</option>
+                <option value="General Medicine">General Medicine</option>
                 <option value="Orthopedics">Orthopedics</option>
-                <option value="Neurology">Neurology</option>
-                <option value="General Surgery">General Surgery</option>
+                <option value="Dermatology">Dermatology</option>
+                <option value="Pediatrics">Pediatrics</option>
               </select>
             </div>
           </div>
@@ -270,7 +353,9 @@ export const ReceptionistDashboard = () => {
         footer={
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setIsVisModalOpen(false)}>Cancel</Button>
-            <Button variant="primary" onClick={handleRegisterVisitor}>Generate Pass</Button>
+            <Button variant="primary" onClick={handleRegisterVisitor} disabled={isSubmitting}>
+              {isSubmitting ? 'Generating...' : 'Generate Pass'}
+            </Button>
           </div>
         }
       >
@@ -293,23 +378,37 @@ export const ReceptionistDashboard = () => {
               type="text"
               value={visPhone}
               onChange={(e) => setVisPhone(e.target.value)}
-              placeholder="e.g. +91 98888 12345"
+              placeholder="e.g. 9888812345"
               className="mt-1 w-full p-2 border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none rounded-lg text-sm"
               required
             />
           </div>
 
           <div>
+            <label className="block text-xs font-semibold text-slate-700">Relationship</label>
+            <select
+              value={visRelationship}
+              onChange={(e) => setVisRelationship(e.target.value)}
+              className="mt-1 w-full p-2 border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none rounded-lg text-sm"
+            >
+              <option value="Family">Family</option>
+              <option value="Friend">Friend</option>
+              <option value="Guardian">Guardian</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+
+          <div>
             <label className="block text-xs font-semibold text-slate-700">Visiting Patient</label>
             <select
-              value={visPatient}
-              onChange={(e) => setVisPatient(e.target.value)}
+              value={visPatientId}
+              onChange={(e) => setVisPatientId(e.target.value)}
               className="mt-1 w-full p-2 border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none rounded-lg text-sm"
               required
             >
               <option value="">-- Select Patient --</option>
-              {patients.filter(p => p.status !== 'Outpatient').map(p => (
-                <option key={p.id} value={p.name}>{p.name} ({p.room})</option>
+              {patients.map(p => (
+                <option key={p._id || p.id} value={p._id || p.id}>{p.name} ({p.room || 'Outpatient'})</option>
               ))}
             </select>
           </div>

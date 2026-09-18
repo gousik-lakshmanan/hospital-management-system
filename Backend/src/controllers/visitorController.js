@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import Visitor from '../models/Visitor.js';
 import Patient from '../models/Patient.js';
+import { createNotification } from '../services/notificationService.js';
 
 // Helper to generate unique passId
 const generateUniquePassId = async () => {
@@ -251,6 +252,19 @@ export const createVisitor = async (req, res) => {
       notes: notes ? notes.trim() : ''
     });
 
+    if (patient.userId) {
+      createNotification({
+        recipient: patient.userId,
+        title: 'Visitor Pass Issued',
+        message: `Visitor pass issued for ${newVisitor.visitorName} (${newVisitor.relationship}) to visit you.`,
+        type: 'visitor',
+        priority: 'normal',
+        link: '/patient/visitors',
+        metadata: { visitorId: newVisitor._id, passId: newVisitor.passId },
+        dedupeKey: `visitor-pass-${newVisitor._id}`
+      });
+    }
+
     return res.status(201).json({
       success: true,
       message: 'Visitor pass created successfully.',
@@ -306,6 +320,23 @@ export const checkInVisitor = async (req, res) => {
         message: 'Concurrent modification conflict: Visitor status has changed.'
       });
     }
+
+    // Non-blocking notification to patient
+    try {
+      const patientDoc = await Patient.findById(updated.patientId);
+      if (patientDoc && patientDoc.userId) {
+        createNotification({
+          recipient: patientDoc.userId,
+          title: 'Visitor Arrived',
+          message: `Your visitor ${updated.visitorName} has checked in.`,
+          type: 'visitor',
+          priority: 'normal',
+          link: '/patient/visitors',
+          metadata: { visitorId: updated._id, passId: updated.passId },
+          dedupeKey: `visitor-checkin-${updated._id}`
+        });
+      }
+    } catch (nErr) {}
 
     return res.status(200).json({
       success: true,

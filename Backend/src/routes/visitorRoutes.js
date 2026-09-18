@@ -24,8 +24,11 @@ router.get('/:id', authorize('admin', 'doctor', 'nurse', 'receptionist', 'patien
 // Manage passes (admin, receptionist only)
 router.post('/', authorize('admin', 'receptionist'), createVisitor);
 router.patch('/:id/check-in', authorize('admin', 'receptionist'), checkInVisitor);
+router.post('/:id/check-in', authorize('admin', 'receptionist'), checkInVisitor);
 router.patch('/:id/check-out', authorize('admin', 'receptionist'), checkOutVisitor);
+router.post('/:id/check-out', authorize('admin', 'receptionist'), checkOutVisitor);
 router.patch('/:id/cancel', authorize('admin', 'receptionist'), cancelVisitor);
+router.post('/:id/cancel', authorize('admin', 'receptionist'), cancelVisitor);
 router.patch('/:id', authorize('admin', 'receptionist'), updateVisitor);
 
 export default router;

@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import BloodRequest from '../models/BloodRequest.js';
 import BloodStock, { ALLOWED_BLOOD_GROUPS } from '../models/BloodStock.js';
+import { createNotification, notifyRoles } from '../services/notificationService.js';
 
 // POST /api/blood-requests - Doctor, Nurse, Receptionist, Patient creates blood request
 export const createBloodRequest = async (req, res) => {
@@ -85,6 +86,17 @@ export const createBloodRequest = async (req, res) => {
       }
       throw saveErr;
     }
+
+    // Non-blocking notification to admins
+    notifyRoles(['admin'], {
+      title: 'New Blood Request',
+      message: `${requesterName} requested ${newRequest.requestedUnits} unit(s) of ${newRequest.bloodGroup} blood.`,
+      type: 'blood_bank',
+      priority: 'high',
+      link: '/admin/blood-bank',
+      metadata: { requestId: newRequest._id, bloodGroup: newRequest.bloodGroup },
+      dedupeKey: `blood-req-${newRequest._id}`
+    });
 
     return res.status(201).json({
       success: true,
@@ -307,6 +319,17 @@ export const approveBloodRequest = async (req, res) => {
       await session.commitTransaction();
       session.endSession();
 
+      createNotification({
+        recipient: updatedRequest.requesterId,
+        title: 'Blood Request Approved',
+        message: `Your request for ${updatedRequest.bloodGroup} blood was approved (${updatedRequest.approvedUnits} unit(s)).`,
+        type: 'blood_bank',
+        priority: 'normal',
+        link: '/blood-bank',
+        metadata: { requestId: updatedRequest._id, bloodGroup: updatedRequest.bloodGroup },
+        dedupeKey: `blood-req-appr-${updatedRequest._id}`
+      });
+
       return res.status(200).json({
         success: true,
         message: `Blood request approved for ${request.requestedUnits} units of ${request.bloodGroup}.`,
@@ -360,6 +383,17 @@ export const approveBloodRequest = async (req, res) => {
           message: 'Blood request is no longer pending.',
         });
       }
+
+      createNotification({
+        recipient: updatedRequest.requesterId,
+        title: 'Blood Request Approved',
+        message: `Your request for ${updatedRequest.bloodGroup} blood was approved (${updatedRequest.approvedUnits} unit(s)).`,
+        type: 'blood_bank',
+        priority: 'normal',
+        link: '/blood-bank',
+        metadata: { requestId: updatedRequest._id, bloodGroup: updatedRequest.bloodGroup },
+        dedupeKey: `blood-req-appr-${updatedRequest._id}`
+      });
 
       return res.status(200).json({
         success: true,
@@ -481,6 +515,17 @@ export const negotiateBloodRequest = async (req, res) => {
       await session.commitTransaction();
       session.endSession();
 
+      createNotification({
+        recipient: updatedRequest.requesterId,
+        title: 'Blood Request Negotiated & Approved',
+        message: `Your request for ${updatedRequest.bloodGroup} blood was approved for ${updatedRequest.approvedUnits} unit(s).`,
+        type: 'blood_bank',
+        priority: 'normal',
+        link: '/blood-bank',
+        metadata: { requestId: updatedRequest._id, bloodGroup: updatedRequest.bloodGroup },
+        dedupeKey: `blood-req-nego-${updatedRequest._id}`
+      });
+
       return res.status(200).json({
         success: true,
         message: `Blood request negotiated: ${parsedUnits} units of ${request.bloodGroup} approved.`,
@@ -542,6 +587,17 @@ export const negotiateBloodRequest = async (req, res) => {
         });
       }
 
+      createNotification({
+        recipient: updatedRequest.requesterId,
+        title: 'Blood Request Negotiated & Approved',
+        message: `Your request for ${updatedRequest.bloodGroup} blood was approved for ${updatedRequest.approvedUnits} unit(s).`,
+        type: 'blood_bank',
+        priority: 'normal',
+        link: '/blood-bank',
+        metadata: { requestId: updatedRequest._id, bloodGroup: updatedRequest.bloodGroup },
+        dedupeKey: `blood-req-nego-${updatedRequest._id}`
+      });
+
       return res.status(200).json({
         success: true,
         message: `Blood request negotiated: ${parsedUnits} units of ${request.bloodGroup} approved.`,
@@ -599,6 +655,17 @@ export const rejectBloodRequest = async (req, res) => {
         message: 'Blood request is no longer pending.',
       });
     }
+
+    createNotification({
+      recipient: updatedRequest.requesterId,
+      title: 'Blood Request Rejected',
+      message: `Your request for ${updatedRequest.bloodGroup} blood was rejected.`,
+      type: 'blood_bank',
+      priority: 'normal',
+      link: '/blood-bank',
+      metadata: { requestId: updatedRequest._id, bloodGroup: updatedRequest.bloodGroup },
+      dedupeKey: `blood-req-rej-${updatedRequest._id}`
+    });
 
     return res.status(200).json({
       success: true,

@@ -28,6 +28,8 @@ router.get('/:id', authorize('admin', 'doctor', 'nurse', 'receptionist', 'patien
 // Create invoice & record payment
 router.post('/', authorize('admin', 'receptionist'), createBill);
 router.patch('/:id/payment', authorize('admin', 'receptionist'), recordPayment);
+router.post('/:id/pay', authorize('admin', 'receptionist'), recordPayment);
 router.patch('/:id/cancel', authorize('admin'), cancelBill);
+router.post('/:id/cancel', authorize('admin'), cancelBill);
 
 export default router;

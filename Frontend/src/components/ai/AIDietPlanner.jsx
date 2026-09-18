@@ -82,6 +82,7 @@ export const AIDietPlanner = () => {
 
   const handleGenerate = async (e) => {
     e.preventDefault();
+    if (loading) return;
 
     // Validate custom disease if "Other" is selected
     let currentDisease = '';

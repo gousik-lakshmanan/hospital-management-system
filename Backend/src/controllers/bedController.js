@@ -1,6 +1,7 @@
-﻿import Bed from '../models/Bed.js';
+import Bed from '../models/Bed.js';
 import User from '../models/User.js';
 import Patient from '../models/Patient.js';
+import notificationService from '../services/notificationService.js';
 
 // POST /api/beds/allocate - Admin direct allocation of a bed to a patient
 export const allocateBed = async (req, res) => {
@@ -65,6 +66,19 @@ export const allocateBed = async (req, res) => {
       { userId: patientUser._id },
       { status: 'Admitted', room: `${updatedBed.roomName} - ${updatedBed.bedNumber}` }
     );
+
+    // Notify patient of direct bed allocation
+    await notificationService.createNotification({
+      recipientId: patientUser._id,
+      recipientRole: 'patient',
+      type: 'BED_ALLOCATION',
+      title: 'Bed Allocated',
+      message: `Bed ${updatedBed.bedNumber} in ${updatedBed.roomName} has been allocated to you.`,
+      entityType: 'Bed',
+      entityId: updatedBed._id,
+      priority: 'HIGH',
+      dedupeKey: `bed-alloc-${updatedBed._id}-${patientUser._id}`
+    });
 
     return res.status(200).json({
       success: true,

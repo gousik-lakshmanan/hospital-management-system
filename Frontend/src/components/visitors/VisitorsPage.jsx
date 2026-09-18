@@ -16,6 +16,7 @@ export const VisitorsPage = () => {
   const [patients, setPatients] = useState([]);
   const [isPassOpen, setIsPassOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [actionLoadingId, setActionLoadingId] = useState(null);
 
   // Form State
   const [visName, setVisName] = useState('');
@@ -46,6 +47,7 @@ export const VisitorsPage = () => {
 
   const handleRegister = async (e) => {
     e.preventDefault();
+    if (submitting) return;
     if (!visName.trim() || !visPhone.trim() || !patientId) return;
 
     try {
@@ -74,6 +76,36 @@ export const VisitorsPage = () => {
       // Error handled in context
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleCheckIn = async (id) => {
+    if (actionLoadingId) return;
+    try {
+      setActionLoadingId(id);
+      await checkInVisitor(id);
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleCheckOut = async (id) => {
+    if (actionLoadingId) return;
+    try {
+      setActionLoadingId(id);
+      await checkOutVisitor(id);
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleCancel = async (id) => {
+    if (actionLoadingId) return;
+    try {
+      setActionLoadingId(id);
+      await cancelVisitor(id);
+    } finally {
+      setActionLoadingId(null);
     }
   };
 
@@ -152,16 +184,19 @@ export const VisitorsPage = () => {
                 variant="primary"
                 size="sm"
                 icon={CheckCircle}
+                loading={actionLoadingId === (row._id || row.id)}
+                disabled={!!actionLoadingId}
                 className="text-xs py-1 px-2.5"
-                onClick={() => checkInVisitor(row._id || row.id)}
+                onClick={() => handleCheckIn(row._id || row.id)}
               >
                 Check In
               </Button>
               <Button
                 variant="outline"
                 size="sm"
+                disabled={!!actionLoadingId}
                 className="text-xs py-1 px-2 text-rose-600 border-slate-200 hover:bg-rose-50"
-                onClick={() => cancelVisitor(row._id || row.id)}
+                onClick={() => handleCancel(row._id || row.id)}
               >
                 Cancel
               </Button>
@@ -172,8 +207,10 @@ export const VisitorsPage = () => {
               variant="outline"
               size="sm"
               icon={LogOut}
+              loading={actionLoadingId === (row._id || row.id)}
+              disabled={!!actionLoadingId}
               className="text-xs py-1 px-2.5 text-amber-700 border-amber-200 hover:bg-amber-50"
-              onClick={() => checkOutVisitor(row._id || row.id)}
+              onClick={() => handleCheckOut(row._id || row.id)}
             >
               Check Out
             </Button>

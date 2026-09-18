@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import Appointment from '../models/Appointment.js';
 import User from '../models/User.js';
+import notificationService from '../services/notificationService.js';
 
 /**
  * @desc    Get active provider list (Doctors and Nurses) for booking options
@@ -183,6 +184,19 @@ export const bookAppointment = async (req, res, next) => {
     });
 
     await newAppointment.save();
+
+    // Notify assigned doctor or nurse
+    await notificationService.createNotification({
+      recipientId: provider._id,
+      recipientRole: provider.role,
+      type: 'APPOINTMENT',
+      title: `New ${type === 'doctor' ? 'Doctor' : 'Nurse'} Appointment Request`,
+      message: `New appointment request from ${patientName} for ${date} at ${time}.`,
+      entityType: 'Appointment',
+      entityId: newAppointment._id,
+      priority: 'NORMAL',
+      dedupeKey: `appt-req-${newAppointment._id}`
+    });
 
     return res.status(201).json({
       success: true,
@@ -425,6 +439,33 @@ export const updateAppointmentStatus = async (req, res, next) => {
 
     await appointment.save();
 
+    // Notify patient of status update
+    if (status === 'Confirmed') {
+      await notificationService.createNotification({
+        recipientId: appointment.patientId,
+        recipientRole: 'patient',
+        type: 'APPOINTMENT',
+        title: 'Appointment Confirmed',
+        message: `Your appointment with ${appointment.providerName} on ${appointment.date} at ${appointment.time} is confirmed.`,
+        entityType: 'Appointment',
+        entityId: appointment._id,
+        priority: 'NORMAL',
+        dedupeKey: `appt-conf-${appointment._id}`
+      });
+    } else if (status === 'Rejected') {
+      await notificationService.createNotification({
+        recipientId: appointment.patientId,
+        recipientRole: 'patient',
+        type: 'APPOINTMENT',
+        title: 'Appointment Declined',
+        message: `Your appointment request with ${appointment.providerName} was declined${notes ? ': ' + notes : '.'}`,
+        entityType: 'Appointment',
+        entityId: appointment._id,
+        priority: 'NORMAL',
+        dedupeKey: `appt-rej-${appointment._id}`
+      });
+    }
+
     return res.status(200).json({
       success: true,
       message: `Appointment status successfully updated to ${appointment.status}.`,
@@ -510,6 +551,19 @@ export const rescheduleAppointment = async (req, res, next) => {
     }
 
     await appointment.save();
+
+    // Notify patient of rescheduled appointment
+    await notificationService.createNotification({
+      recipientId: appointment.patientId,
+      recipientRole: 'patient',
+      type: 'APPOINTMENT',
+      title: 'Appointment Rescheduled',
+      message: `Your appointment with ${appointment.providerName} has been rescheduled to ${appointment.date} at ${appointment.time}.`,
+      entityType: 'Appointment',
+      entityId: appointment._id,
+      priority: 'NORMAL',
+      dedupeKey: `appt-resched-${appointment._id}-${appointment.date}-${appointment.time}`
+    });
 
     return res.status(200).json({
       success: true,
