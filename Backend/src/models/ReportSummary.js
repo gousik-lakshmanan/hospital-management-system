@@ -8,6 +8,13 @@ const findingSchema = new mongoose.Schema({
   explanation: { type: String, required: true }
 }, { _id: false });
 
+const reportOverviewSchema = new mongoose.Schema({
+  reportType: { type: String, default: '' },
+  reportDate: { type: String, default: '' },
+  department: { type: String, default: '' },
+  purpose: { type: String, default: '' }
+}, { _id: false });
+
 const reportSummarySchema = new mongoose.Schema(
   {
     userId: {
@@ -44,6 +51,34 @@ const reportSummarySchema = new mongoose.Schema(
     model: {
       type: String,
       default: 'gemini'
+    },
+    // Structured AI Report Summarizer fields (additive/optional).
+    reportOverview: {
+      type: reportOverviewSchema,
+      default: () => ({})
+    },
+    simpleSummary: {
+      type: String,
+      default: ''
+    },
+    normalFindings: [{ type: String }],
+    abnormalFindings: [{ type: String }],
+    possibleSignificance: [{ type: String }],
+    possibleCausesOrFactors: [{ type: String }],
+    generalPreventionAndGuidance: [{ type: String }],
+    doctorConsultation: [{ type: String }],
+    questionsForDoctor: [{ type: String }],
+    disclaimer: {
+      type: String,
+      default: ''
+    },
+    fileName: {
+      type: String,
+      default: ''
+    },
+    fileType: {
+      type: String,
+      default: ''
     }
   },
   { timestamps: true }

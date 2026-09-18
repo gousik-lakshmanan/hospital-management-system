@@ -1,8 +1,12 @@
 import api from './api.js';
 
 export const reportSummarizerService = {
-  summarizeReport: async (reportData) => {
-    const response = await api.post('/report-summaries', reportData);
+  analyzeReport: async (file) => {
+    const formData = new FormData();
+    formData.append('report', file);
+    const response = await api.post('/report-summaries', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
     return response.data;
   },
   getMyReportSummaries: async () => {
@@ -10,3 +14,5 @@ export const reportSummarizerService = {
     return response.data;
   }
 };
+
+export default reportSummarizerService;
